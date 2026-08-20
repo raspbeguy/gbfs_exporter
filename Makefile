@@ -11,6 +11,10 @@ test:
 vet:
 	go vet ./...
 
+lint: vet
+	@test -z "$$(gofmt -l .)" || (echo "gofmt found these files:"; gofmt -l .; exit 1)
+	go mod tidy -diff
+
 run: build
 	./$(BINARY) -config config.yml
 

@@ -17,6 +17,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -33,10 +34,28 @@ const version = "0.1.0"
 
 // Config is the content of the configuration file.
 type Config struct {
-	ListenAddress string             `yaml:"listen_address"`
-	Timeout       time.Duration      `yaml:"timeout"`
-	UserAgent     string             `yaml:"user_agent"`
-	Systems       []collector.System `yaml:"systems"`
+	ListenAddress string `yaml:"listen_address"`
+	// Timeout is the budget for one scrape. It covers every feed of every
+	// system.
+	Timeout time.Duration `yaml:"timeout"`
+	// RequestTimeout is the budget for one feed. Keep it well below Timeout,
+	// because a system with max_concurrency set reads its feeds one after the
+	// other inside the scrape budget.
+	RequestTimeout time.Duration      `yaml:"request_timeout"`
+	UserAgent      string             `yaml:"user_agent"`
+	Probe          ProbeConfig        `yaml:"probe"`
+	Systems        []collector.System `yaml:"systems"`
+}
+
+// ProbeConfig controls the /probe endpoint.
+type ProbeConfig struct {
+	// Enabled turns the endpoint on. The default is true.
+	Enabled *bool `yaml:"enabled"`
+	// AllowedHosts lists the hosts that the endpoint accepts. An empty list
+	// accepts every host.
+	AllowedHosts []string `yaml:"allowed_hosts"`
+	// MaxInFlight limits the number of probes that run at the same time.
+	MaxInFlight int `yaml:"max_in_flight"`
 }
 
 func main() {
@@ -62,7 +81,7 @@ func main() {
 		config.ListenAddress = *listenAddress
 	}
 
-	client := gbfs.NewClient(config.Timeout, config.UserAgent)
+	client := gbfs.NewClient(config.RequestTimeout, config.UserAgent)
 
 	registry := prometheus.NewRegistry()
 	registry.MustRegister(collectors.NewGoCollector())
@@ -74,7 +93,9 @@ func main() {
 		ErrorHandling: promhttp.ContinueOnError,
 		Registry:      registry,
 	}))
-	mux.HandleFunc("/probe", probeHandler(client, config.Timeout, log))
+	if config.Probe.Enabled == nil || *config.Probe.Enabled {
+		mux.HandleFunc("/probe", probeHandler(client, config, log))
+	}
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte("ok\n"))
 	})
@@ -108,7 +129,14 @@ func main() {
 //
 // Use it to scrape a system that the configuration file does not list. The
 // query parameters are target, name, per_vehicle_type, and max_concurrency.
-func probeHandler(client *gbfs.Client, timeout time.Duration, log *slog.Logger) http.HandlerFunc {
+//
+// The endpoint fetches the URL that the caller gives. Set allowed_hosts, or
+// keep the port closed to untrusted callers.
+func probeHandler(client *gbfs.Client, config *Config, log *slog.Logger) http.HandlerFunc {
+	allowed := make(map[string]bool, len(config.Probe.AllowedHosts))
+	for _, host := range config.Probe.AllowedHosts {
+		allowed[strings.ToLower(host)] = true
+	}
 	return func(w http.ResponseWriter, r *http.Request) {
 		target := r.URL.Query().Get("target")
 		if target == "" {
@@ -118,6 +146,11 @@ func probeHandler(client *gbfs.Client, timeout time.Duration, log *slog.Logger) 
 		parsed, err := url.Parse(target)
 		if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") {
 			http.Error(w, "the target parameter must be an http or https URL", http.StatusBadRequest)
+			return
+		}
+		if len(allowed) > 0 && !allowed[strings.ToLower(parsed.Hostname())] {
+			log.Warn("the probe target is not in allowed_hosts", "host", parsed.Hostname())
+			http.Error(w, "the host of the target is not in allowed_hosts", http.StatusForbidden)
 			return
 		}
 
@@ -135,8 +168,14 @@ func probeHandler(client *gbfs.Client, timeout time.Duration, log *slog.Logger) 
 			MaxConcurrency: maxConcurrency,
 		}
 		registry := prometheus.NewRegistry()
-		registry.MustRegister(collector.New(client, []collector.System{system}, timeout, log))
-		promhttp.HandlerFor(registry, promhttp.HandlerOpts{ErrorHandling: promhttp.ContinueOnError}).ServeHTTP(w, r)
+		single := collector.New(client, []collector.System{system}, config.Timeout, log)
+		// The request context stops the outbound requests when Prometheus
+		// gives up on the scrape.
+		registry.MustRegister(single.WithContext(r.Context()))
+		promhttp.HandlerFor(registry, promhttp.HandlerOpts{
+			ErrorHandling:       promhttp.ContinueOnError,
+			MaxRequestsInFlight: config.Probe.MaxInFlight,
+		}).ServeHTTP(w, r)
 	}
 }
 
@@ -173,7 +212,16 @@ func loadConfig(path string) (*Config, error) {
 		config.ListenAddress = ":9718"
 	}
 	if config.Timeout <= 0 {
-		config.Timeout = 15 * time.Second
+		config.Timeout = 30 * time.Second
+	}
+	if config.RequestTimeout <= 0 {
+		config.RequestTimeout = 10 * time.Second
+	}
+	if config.RequestTimeout > config.Timeout {
+		return nil, errors.New("request_timeout is higher than timeout")
+	}
+	if config.Probe.MaxInFlight <= 0 {
+		config.Probe.MaxInFlight = 4
 	}
 	if config.UserAgent == "" {
 		config.UserAgent = "gbfs_exporter/" + version

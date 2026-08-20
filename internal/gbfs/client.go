@@ -21,14 +21,21 @@ type Client struct {
 	userAgent string
 }
 
-// NewClient returns a client that gives up on a feed after the timeout.
+// NewClient returns a client that gives up on one feed after the timeout.
+//
+// The transport reads the proxy settings from the environment, so the
+// variables HTTP_PROXY, HTTPS_PROXY, and NO_PROXY work.
 func NewClient(timeout time.Duration, userAgent string) *Client {
 	return &Client{
 		http: &http.Client{
 			Timeout: timeout,
 			Transport: &http.Transport{
-				MaxIdleConnsPerHost: 4,
-				IdleConnTimeout:     90 * time.Second,
+				Proxy:                 http.ProxyFromEnvironment,
+				ForceAttemptHTTP2:     true,
+				MaxIdleConnsPerHost:   4,
+				IdleConnTimeout:       90 * time.Second,
+				TLSHandshakeTimeout:   10 * time.Second,
+				ExpectContinueTimeout: 1 * time.Second,
 			},
 		},
 		userAgent: userAgent,

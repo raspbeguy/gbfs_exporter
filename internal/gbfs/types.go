@@ -47,7 +47,9 @@ func (t *Timestamp) UnmarshalJSON(b []byte) error {
 // Text reads a GBFS name or description.
 //
 // GBFS 2.x writes a plain string. GBFS 3.0 writes a list of translations.
-// The decoder keeps the first translation.
+// The decoder keeps the English translation. If the list holds no English
+// translation, the decoder keeps the first one. The rule is fixed, so the
+// label value does not change between two scrapes.
 type Text string
 
 // UnmarshalJSON accepts a string or a list of {text, language} objects.
@@ -67,9 +69,16 @@ func (s *Text) UnmarshalJSON(b []byte) error {
 	if err := json.Unmarshal(b, &translations); err != nil {
 		return fmt.Errorf("gbfs: cannot read the localized string %s", b)
 	}
-	if len(translations) > 0 {
-		*s = Text(translations[0].Text)
+	if len(translations) == 0 {
+		return nil
 	}
+	for _, translation := range translations {
+		if translation.Language == "en" {
+			*s = Text(translation.Text)
+			return nil
+		}
+	}
+	*s = Text(translations[0].Text)
 	return nil
 }
 
@@ -212,9 +221,9 @@ type StationStatus struct {
 	NumVehiclesDisabled  *Float      `json:"num_vehicles_disabled"`
 	NumDocksAvailable    *Float      `json:"num_docks_available"`
 	NumDocksDisabled     *Float      `json:"num_docks_disabled"`
-	IsInstalled          Bool        `json:"is_installed"`
-	IsRenting            Bool        `json:"is_renting"`
-	IsReturning          Bool        `json:"is_returning"`
+	IsInstalled          *Bool       `json:"is_installed"`
+	IsRenting            *Bool       `json:"is_renting"`
+	IsReturning          *Bool       `json:"is_returning"`
 	VehicleTypes         []TypeCount `json:"vehicle_types_available"`
 }
 
@@ -264,8 +273,12 @@ type VehicleStatusFeed struct {
 }
 
 // All returns the vehicles of the feed under either field name.
+//
+// The choice follows which field the feed holds, not how many vehicles it
+// holds. An empty GBFS 3.0 feed therefore reports 0 vehicles, and not a
+// missing feed.
 func (f VehicleStatusFeed) All() []Vehicle {
-	if len(f.Data.Vehicles) > 0 {
+	if f.Data.Vehicles != nil {
 		return f.Data.Vehicles
 	}
 	return f.Data.Bikes

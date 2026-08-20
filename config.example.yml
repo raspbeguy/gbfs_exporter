@@ -1,12 +1,28 @@
 # Address that the exporter listens on.
 listen_address: ":9718"
 
-# Time limit for one scrape. The exporter reads every feed of every system
-# inside this limit. Keep the limit below the Prometheus scrape_timeout.
-timeout: 15s
+# Budget for one scrape. The exporter reads every feed of every system inside
+# this budget. Keep the budget below the Prometheus scrape_timeout.
+timeout: 30s
+
+# Budget for one feed. Keep it well below timeout. A system with
+# max_concurrency set reads its feeds one after the other, so its feeds share
+# the scrape budget.
+request_timeout: 10s
 
 # User agent that the exporter sends. Some operators ask for a contact address.
 user_agent: "gbfs_exporter/0.1.0 (+https://example.org/contact)"
+
+# Settings of the /probe endpoint. The endpoint fetches the URL that the caller
+# gives, so it can reach any address that the exporter can reach.
+probe:
+  # Set enabled to false to remove the endpoint.
+  enabled: true
+  # List the hosts that the endpoint accepts. An empty list accepts every host.
+  allowed_hosts:
+    - gbfs.urbansharing.com
+  # Number of probes that run at the same time.
+  max_in_flight: 4
 
 # One entry per GBFS system. The url is the auto-discovery file, gbfs.json.
 systems:

@@ -1,6 +1,7 @@
 package collector_test
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -198,6 +199,106 @@ func TestCollectReportsDownSystem(t *testing.T) {
 gbfs_up{system="demo"} 0
 `
 	if err := testutil.CollectAndCompare(subject, strings.NewReader(expected)); err != nil {
+		t.Error(err)
+	}
+}
+
+// TestCollectKeepsFeedsThatAnswered checks that one broken feed does not hide
+// the feeds that answered. The discovery file lists vehicle_types.json, but
+// the server does not serve it.
+func TestCollectKeepsFeedsThatAnswered(t *testing.T) {
+	files := map[string]string{}
+	for path, body := range version2Feeds {
+		if path == "/vehicle_types.json" {
+			continue
+		}
+		files[path] = body
+	}
+	server := fakeSystem(t, files)
+	subject := newCollector(t, server.URL+"/gbfs.json", false)
+
+	expected := `
+# HELP gbfs_up 1 if the exporter read every feed of the system, 0 if one feed failed.
+# TYPE gbfs_up gauge
+gbfs_up{system="demo"} 0
+# HELP gbfs_station_vehicles_available Number of vehicles at the station that a rider can take.
+# TYPE gbfs_station_vehicles_available gauge
+gbfs_station_vehicles_available{station_id="1",system="demo"} 3
+gbfs_station_vehicles_available{station_id="2",system="demo"} 5
+# HELP gbfs_system_stations Number of stations in the station feed.
+# TYPE gbfs_system_stations gauge
+gbfs_system_stations{system="demo"} 2
+`
+	names := []string{"gbfs_up", "gbfs_station_vehicles_available", "gbfs_system_stations"}
+	if err := testutil.CollectAndCompare(subject, strings.NewReader(expected), names...); err != nil {
+		t.Error(err)
+	}
+}
+
+// TestCollectWithoutStatusFeed checks a system that publishes its stations but
+// no status. The station count must stay right, and the totals must stay away.
+func TestCollectWithoutStatusFeed(t *testing.T) {
+	server := fakeSystem(t, map[string]string{
+		"/gbfs.json": `{"version":"2.3","data":{"en":{"feeds":[
+			{"name":"station_information","url":"station_information.json"}]}}}`,
+		"/station_information.json": `{"data":{"stations":[
+			{"station_id":"1","name":"Gare","lat":48.8,"lon":2.3},
+			{"station_id":"2","name":"Place","lat":48.9,"lon":2.4}]}}`,
+	})
+	subject := newCollector(t, server.URL+"/gbfs.json", false)
+
+	expected := `
+# HELP gbfs_system_stations Number of stations in the station feed.
+# TYPE gbfs_system_stations gauge
+gbfs_system_stations{system="demo"} 2
+`
+	names := []string{
+		"gbfs_system_stations", "gbfs_system_vehicles_available",
+		"gbfs_system_docks_available", "gbfs_system_vehicles_disabled",
+	}
+	if err := testutil.CollectAndCompare(subject, strings.NewReader(expected), names...); err != nil {
+		t.Error(err)
+	}
+}
+
+// TestCollectSkipsFlagsThatTheFeedOmits checks that a missing is_renting field
+// writes no metric. A 0 would read as "the station is closed".
+func TestCollectSkipsFlagsThatTheFeedOmits(t *testing.T) {
+	server := fakeSystem(t, map[string]string{
+		"/gbfs.json": `{"version":"2.3","data":{"en":{"feeds":[
+			{"name":"station_status","url":"station_status.json"}]}}}`,
+		"/station_status.json": `{"data":{"stations":[
+			{"station_id":"1","num_bikes_available":3,"is_installed":true}]}}`,
+	})
+	subject := newCollector(t, server.URL+"/gbfs.json", false)
+
+	expected := `
+# HELP gbfs_station_installed 1 if the station is on the street, 0 if it is not.
+# TYPE gbfs_station_installed gauge
+gbfs_station_installed{station_id="1",system="demo"} 1
+`
+	names := []string{"gbfs_station_installed", "gbfs_station_renting", "gbfs_station_returning"}
+	if err := testutil.CollectAndCompare(subject, strings.NewReader(expected), names...); err != nil {
+		t.Error(err)
+	}
+}
+
+// TestCollectStopsWithTheRequestContext checks that a cancelled scrape does not
+// keep the outbound requests alive.
+func TestCollectStopsWithTheRequestContext(t *testing.T) {
+	server := fakeSystem(t, version2Feeds)
+	subject := newCollector(t, server.URL+"/gbfs.json", false)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	bound := subject.WithContext(ctx)
+
+	expected := `
+# HELP gbfs_up 1 if the exporter read every feed of the system, 0 if one feed failed.
+# TYPE gbfs_up gauge
+gbfs_up{system="demo"} 0
+`
+	if err := testutil.CollectAndCompare(bound, strings.NewReader(expected), "gbfs_up"); err != nil {
 		t.Error(err)
 	}
 }

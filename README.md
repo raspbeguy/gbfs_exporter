@@ -30,7 +30,7 @@ free-floating system has no station feed.
 
 ## Build
 
-Go 1.24 or higher is necessary.
+Go 1.25 or higher is necessary.
 
 ```
 make build
@@ -54,12 +54,35 @@ docker build -t gbfs_exporter .
    the system, normally `gbfs.json`.
 
 3. Set `max_concurrency` to 1 for an operator that answers HTTP 429 to parallel
-   requests.
+   requests. Such a system reads its feeds one after the other. Give `timeout`
+   enough room for all of them.
 
 4. Add an API key or a client name under `headers` if the operator asks for one.
 
 The exporter refuses a configuration file that holds an unknown key. This
 catches a typing mistake at start.
+
+These settings apply to the whole exporter:
+
+| Setting | Default | Meaning |
+| --- | --- | --- |
+| `listen_address` | `:9718` | Address that the exporter listens on. |
+| `timeout` | `30s` | Budget for one scrape, across every system. |
+| `request_timeout` | `10s` | Budget for one feed. It must not exceed `timeout`. |
+| `user_agent` | the version | User agent that the exporter sends. |
+| `probe.enabled` | `true` | Turn the `/probe` endpoint on or off. |
+| `probe.allowed_hosts` | empty | Hosts that `/probe` accepts. Empty accepts every host. |
+| `probe.max_in_flight` | `4` | Probes that run at the same time. |
+
+These settings apply to one system:
+
+| Setting | Default | Meaning |
+| --- | --- | --- |
+| `name` | the host of the url | Value of the `system` label. |
+| `url` | none | The auto-discovery file. This setting is necessary. |
+| `per_vehicle_type` | `false` | Add one series per station and per vehicle type. |
+| `max_concurrency` | `0` | Feeds to read at the same time. 0 means no limit. |
+| `headers` | empty | Headers to add to every request. |
 
 ## Run
 
@@ -92,6 +115,7 @@ the `name` from the configuration file.
 | Metric | Extra labels | Meaning |
 | --- | --- | --- |
 | `gbfs_up` | | 1 if the exporter read every feed, 0 if one feed failed. |
+
 | `gbfs_system_info` | `system_id`, `name`, `version`, `timezone` | System metadata. The value is always 1. |
 | `gbfs_station_info` | `station_id`, `name`, `lat`, `lon` | Station metadata. The value is always 1. |
 | `gbfs_station_capacity` | `station_id` | Number of docks that the station has. |
@@ -116,11 +140,32 @@ label values low. To get the name in a query, join the two metrics.
 
 A vehicle that is both disabled and reserved counts as disabled.
 
+A feed that fails does not remove the feeds that answered. The exporter sets
+`gbfs_up` to 0 and publishes the data that it did read. Alert on `gbfs_up`, and
+not on a metric that disappears.
+
+The exporter writes a metric only for a field that the feed holds. A system
+without docks gets no `gbfs_station_docks_available`. A feed that omits
+`is_renting` gets no `gbfs_station_renting`, because a 0 reads as a closed
+station.
+
+GBFS 3.0 gives a name in several languages. The exporter keeps the English
+name. Without an English name, it keeps the first name of the list.
+
 Some operators list docked vehicles in the vehicle feed. For those operators,
 `gbfs_system_free_vehicles` and `gbfs_system_vehicles_available` count the same
 vehicle twice. Check the feed of your operator before you add the two metrics.
 
 ## Scrape one system that the configuration does not list
+
+### Warning
+
+The `/probe` endpoint fetches the URL that the caller gives. A caller who
+reaches the exporter port can therefore reach any address that the exporter can
+reach, and can read back whether that address answers. Set `allowed_hosts`, or
+set `enabled: false`, or keep the port closed to untrusted callers.
+
+### Use
 
 Use the `/probe` endpoint. It accepts these query parameters:
 
@@ -145,7 +190,7 @@ For the systems in the configuration file, use a static target:
 scrape_configs:
   - job_name: gbfs
     scrape_interval: 60s
-    scrape_timeout: 30s
+    scrape_timeout: 45s
     static_configs:
       - targets: ["localhost:9718"]
 ```
@@ -156,7 +201,7 @@ For the `/probe` endpoint, use a relabel rule:
 scrape_configs:
   - job_name: gbfs_probe
     scrape_interval: 60s
-    scrape_timeout: 30s
+    scrape_timeout: 45s
     metrics_path: /probe
     static_configs:
       - targets:

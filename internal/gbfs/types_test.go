@@ -37,13 +37,50 @@ func TestTextAcceptsBothVersions(t *testing.T) {
 		t.Errorf("got %q", plain)
 	}
 
+	// English wins, whatever its place in the list.
 	var localized Text
 	input := `[{"text":"Gare du Nord","language":"fr"},{"text":"North Station","language":"en"}]`
 	if err := json.Unmarshal([]byte(input), &localized); err != nil {
 		t.Fatal(err)
 	}
-	if localized != "Gare du Nord" {
+	if localized != "North Station" {
 		t.Errorf("got %q", localized)
+	}
+
+	// Without English, the first translation wins.
+	var noEnglish Text
+	input = `[{"text":"Gare du Nord","language":"fr"},{"text":"Nordbahnhof","language":"de"}]`
+	if err := json.Unmarshal([]byte(input), &noEnglish); err != nil {
+		t.Fatal(err)
+	}
+	if noEnglish != "Gare du Nord" {
+		t.Errorf("got %q", noEnglish)
+	}
+}
+
+func TestVehicleFeedTellsEmptyFromMissing(t *testing.T) {
+	var version3 VehicleStatusFeed
+	if err := json.Unmarshal([]byte(`{"data":{"vehicles":[]}}`), &version3); err != nil {
+		t.Fatal(err)
+	}
+	if version3.All() == nil {
+		t.Error("an empty GBFS 3.0 vehicle feed must report zero vehicles, not a missing feed")
+	}
+
+	var version2 VehicleStatusFeed
+	if err := json.Unmarshal([]byte(`{"data":{"bikes":[{"bike_id":"a"}]}}`), &version2); err != nil {
+		t.Fatal(err)
+	}
+	if len(version2.All()) != 1 {
+		t.Errorf("got %d vehicles", len(version2.All()))
+	}
+
+	var missing VehicleStatusFeed
+	if err := json.Unmarshal([]byte(`{"data":{}}`), &missing); err != nil {
+		t.Fatal(err)
+	}
+	if missing.All() != nil {
+		t.Error("a missing vehicle feed must stay nil")
 	}
 }
 

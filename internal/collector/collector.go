@@ -137,6 +137,7 @@ type Collector struct {
 	systems []System
 	timeout time.Duration
 	log     *slog.Logger
+	parent  context.Context
 }
 
 // New returns a collector for the given systems.
@@ -151,9 +152,21 @@ func (c *Collector) Describe(ch chan<- *prometheus.Desc) {
 	}
 }
 
+// WithContext returns a collector that stops its requests when the context
+// ends. Use it to tie one scrape to the life of its HTTP request.
+func (c *Collector) WithContext(ctx context.Context) prometheus.Collector {
+	copied := *c
+	copied.parent = ctx
+	return &copied
+}
+
 // Collect reads all systems at the same time and writes their metrics.
 func (c *Collector) Collect(ch chan<- prometheus.Metric) {
-	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
+	parent := c.parent
+	if parent == nil {
+		parent = context.Background()
+	}
+	ctx, cancel := context.WithTimeout(parent, c.timeout)
 	defer cancel()
 
 	var group sync.WaitGroup
@@ -175,12 +188,19 @@ func (c *Collector) collectSystem(ctx context.Context, ch chan<- prometheus.Metr
 	if err != nil {
 		c.log.Warn("cannot read the system", "system", system.Name, "error", err)
 		gauge(ch, upDesc, 0, system.Name)
+	} else {
+		gauge(ch, upDesc, 1, system.Name)
+	}
+	// The client returns the feeds that it did read, even after a failure.
+	// One broken feed must not hide the feeds that answered.
+	if snapshot == nil {
 		return
 	}
-	gauge(ch, upDesc, 1, system.Name)
 
-	gauge(ch, systemInfoDesc, 1, system.Name, snapshot.SystemID,
-		snapshot.SystemName, snapshot.Version, snapshot.Timezone)
+	if snapshot.SystemID != "" || snapshot.SystemName != "" {
+		gauge(ch, systemInfoDesc, 1, system.Name, snapshot.SystemID,
+			snapshot.SystemName, snapshot.Version, snapshot.Timezone)
+	}
 
 	c.collectStations(ch, system, snapshot)
 	c.collectVehicles(ch, system, snapshot)
@@ -230,9 +250,9 @@ func (c *Collector) collectStations(ch chan<- prometheus.Metric, system System, 
 		if status.NumDocksDisabled != nil {
 			gauge(ch, stationDocksDisabledDesc, float64(*status.NumDocksDisabled), system.Name, status.StationID)
 		}
-		gauge(ch, stationInstalledDesc, boolValue(status.IsInstalled), system.Name, status.StationID)
-		gauge(ch, stationRentingDesc, boolValue(status.IsRenting), system.Name, status.StationID)
-		gauge(ch, stationReturningDesc, boolValue(status.IsReturning), system.Name, status.StationID)
+		flag(ch, stationInstalledDesc, status.IsInstalled, system.Name, status.StationID)
+		flag(ch, stationRentingDesc, status.IsRenting, system.Name, status.StationID)
+		flag(ch, stationReturningDesc, status.IsReturning, system.Name, status.StationID)
 
 		if !system.PerVehicleType {
 			continue
@@ -248,8 +268,17 @@ func (c *Collector) collectStations(ch chan<- prometheus.Metric, system System, 
 		}
 	}
 
-	if len(snapshot.Status) > 0 || len(snapshot.Stations) > 0 {
-		gauge(ch, systemStationsDesc, stationCount, system.Name)
+	// A system that publishes station_information without station_status still
+	// has stations. Count the identifiers of both feeds.
+	for identifier := range reported {
+		seen[identifier] = true
+	}
+	if len(seen) > 0 {
+		gauge(ch, systemStationsDesc, float64(len(seen)), system.Name)
+	}
+	// The totals come from the status feed. Without that feed the totals are
+	// unknown, and a 0 would read as an empty system.
+	if stationCount > 0 {
 		gauge(ch, systemVehiclesAvailableDesc, totalAvailable, system.Name)
 		gauge(ch, systemVehiclesDisabledDesc, totalDisabled, system.Name)
 		gauge(ch, systemDocksAvailableDesc, totalDocks, system.Name)
@@ -305,11 +334,17 @@ func formatCoordinate(value gbfs.Float) string {
 	return strconv.FormatFloat(float64(value), 'f', -1, 64)
 }
 
-func boolValue(flag gbfs.Bool) float64 {
-	if flag {
-		return 1
+// flag writes a 0 or 1 metric. A field that the feed does not set writes
+// nothing, because 0 means "closed" and that reading is wrong.
+func flag(ch chan<- prometheus.Metric, desc *prometheus.Desc, value *gbfs.Bool, labels ...string) {
+	if value == nil {
+		return
 	}
-	return 0
+	number := float64(0)
+	if *value {
+		number = 1
+	}
+	gauge(ch, desc, number, labels...)
 }
 
 func gauge(ch chan<- prometheus.Metric, desc *prometheus.Desc, value float64, labels ...string) {
