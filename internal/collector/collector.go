@@ -14,17 +14,19 @@ import (
 )
 
 // System is one GBFS system that the exporter reads.
+// System is one system to read. The caller builds it from the query string
+// of the request and from the module that the request names.
 type System struct {
-	Name           string `yaml:"name"`
-	URL            string `yaml:"url"`
-	PerVehicleType bool   `yaml:"per_vehicle_type"`
+	Name           string
+	URL            string
+	PerVehicleType bool
 	// Headers go with every request to this system. Use them for an API key
 	// or for a client name that the operator asks for.
-	Headers map[string]string `yaml:"headers"`
+	Headers map[string]string
 	// MaxConcurrency limits how many feeds of this system the exporter reads
 	// at the same time. Set it to 1 for an operator that answers HTTP 429 to
 	// parallel requests. A value of 0 means no limit.
-	MaxConcurrency int `yaml:"max_concurrency"`
+	MaxConcurrency int
 }
 
 const namespace = "gbfs"

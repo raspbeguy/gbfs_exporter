@@ -1,50 +1,56 @@
+# The exporter follows the multi-target pattern of blackbox_exporter. This
+# file holds no target. Prometheus gives the target in the query string of
+# each scrape, so a new system needs no restart of the exporter.
+
 # Address that the exporter listens on.
 listen_address: ":9718"
 
-# Budget for one scrape. The exporter reads every feed of every system inside
-# this budget. Keep the budget below the Prometheus scrape_timeout.
+# Budget for one scrape. The exporter reads every feed of the system inside
+# this budget. Keep the budget below the scrape_timeout of Prometheus.
 timeout: 30s
 
-# Budget for one feed. Keep it well below timeout. A system with
-# max_concurrency set reads its feeds one after the other, so its feeds share
+# Budget for one feed. Keep it well below timeout. A module with
+# max_concurrency set reads the feeds one after the other, so the feeds share
 # the scrape budget.
 request_timeout: 10s
 
-# User agent that the exporter sends. Some operators ask for a contact address.
+# User agent that the exporter sends. Some operators ask for a contact
+# address.
 user_agent: "gbfs_exporter/0.1.0 (+https://example.org/contact)"
 
-# Settings of the /probe endpoint. The endpoint fetches the URL that the caller
-# gives, so it can reach any address that the exporter can reach.
-probe:
-  # Set enabled to false to remove the endpoint.
-  enabled: true
-  # List the hosts that the endpoint accepts. An empty list accepts every host.
-  allowed_hosts:
-    - gbfs.urbansharing.com
-  # Number of probes that run at the same time.
-  max_in_flight: 4
+# Hosts that the exporter accepts as a target. An empty list accepts every
+# host, which lets any caller reach any address that the exporter can reach.
+# Keep this list short.
+allowed_hosts:
+  - gbfs.urbansharing.com
+  - api.entur.io
+  - gbfs.lyft.com
 
-# One entry per GBFS system. The url is the auto-discovery file, gbfs.json.
-systems:
-  # A GBFS 2.x system.
-  - name: oslo
-    url: https://gbfs.urbansharing.com/oslobysykkel.no/gbfs.json
+# Number of scrapes that run at the same time. A scrape above the limit gets
+# HTTP 503.
+max_in_flight: 4
 
-  # A GBFS 3.0 system behind an operator that limits parallel requests.
-  - name: trondheim
-    url: https://api.entur.io/mobility/v2/gbfs/v3/trondheimbysykkel/gbfs
+# Modules hold the settings that a query string must not carry, such as an API
+# key. A scrape names one with the module parameter. A scrape without the
+# parameter uses the module called default.
+modules:
+  # Settings for an operator that needs nothing special.
+  default: {}
+
+  # An operator that limits parallel requests and asks for a client name.
+  entur:
+    # Set max_concurrency to 1 if the operator answers HTTP 429 to parallel
+    # requests. A value of 0 means no limit.
+    max_concurrency: 1
     # Set per_vehicle_type to true to get one series per station and per
     # vehicle type. This multiplies the number of series. Leave it off for a
     # large system.
     per_vehicle_type: true
-    # Set max_concurrency to 1 if the operator answers HTTP 429 to parallel
-    # requests. A value of 0 means no limit.
-    max_concurrency: 1
-    # Headers go with every request to this system. Use them for an API key or
-    # for a client name that the operator asks for.
+    # Headers go with every request. Use them for an API key or for a client
+    # name that the operator asks for.
     headers:
       ET-Client-Name: my-company-gbfs-exporter
 
-  # A large GBFS 2.3 system.
-  - name: citibike
-    url: https://gbfs.lyft.com/gbfs/2.3/bkn/gbfs.json
+  # A large system. Keep per_vehicle_type off to hold the series count down.
+  large:
+    per_vehicle_type: false

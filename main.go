@@ -11,18 +11,17 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
 	"os/signal"
-	"strconv"
 	"strings"
 	"syscall"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"gopkg.in/yaml.v3"
 
@@ -34,30 +33,39 @@ import (
 // -ldflags "-X main.version=...".
 var version = "0.1.0"
 
-// Config is the content of the configuration file.
+// Config is the content of the configuration file. It holds no target. The
+// target arrives in the query string of each scrape.
 type Config struct {
 	ListenAddress string `yaml:"listen_address"`
-	// Timeout is the budget for one scrape. It covers every feed of every
-	// system.
+	// Timeout is the budget for one scrape. It covers every feed of the
+	// system that the request names.
 	Timeout time.Duration `yaml:"timeout"`
 	// RequestTimeout is the budget for one feed. Keep it well below Timeout,
-	// because a system with max_concurrency set reads its feeds one after the
+	// because a module with max_concurrency set reads the feeds one after the
 	// other inside the scrape budget.
-	RequestTimeout time.Duration      `yaml:"request_timeout"`
-	UserAgent      string             `yaml:"user_agent"`
-	Probe          ProbeConfig        `yaml:"probe"`
-	Systems        []collector.System `yaml:"systems"`
+	RequestTimeout time.Duration `yaml:"request_timeout"`
+	UserAgent      string        `yaml:"user_agent"`
+	// AllowedHosts lists the hosts that the exporter accepts as a target. An
+	// empty list accepts every host.
+	AllowedHosts []string `yaml:"allowed_hosts"`
+	// MaxInFlight limits the number of scrapes that run at the same time.
+	MaxInFlight int `yaml:"max_in_flight"`
+	// Modules hold the settings that a query string must not carry, such as
+	// an API key. The module parameter of a request names one of them.
+	Modules map[string]Module `yaml:"modules"`
 }
 
-// ProbeConfig controls the /probe endpoint.
-type ProbeConfig struct {
-	// Enabled turns the endpoint on. The default is true.
-	Enabled *bool `yaml:"enabled"`
-	// AllowedHosts lists the hosts that the endpoint accepts. An empty list
-	// accepts every host.
-	AllowedHosts []string `yaml:"allowed_hosts"`
-	// MaxInFlight limits the number of probes that run at the same time.
-	MaxInFlight int `yaml:"max_in_flight"`
+// Module holds the read settings of one operator.
+type Module struct {
+	// PerVehicleType adds one series per station and per vehicle type.
+	PerVehicleType bool `yaml:"per_vehicle_type"`
+	// Headers go with every request. Use them for an API key or for a client
+	// name that the operator asks for.
+	Headers map[string]string `yaml:"headers"`
+	// MaxConcurrency limits how many feeds the exporter reads at the same
+	// time. Set it to 1 for an operator that answers HTTP 429 to parallel
+	// requests. A value of 0 means no limit.
+	MaxConcurrency int `yaml:"max_concurrency"`
 }
 
 func main() {
@@ -85,19 +93,8 @@ func main() {
 
 	client := gbfs.NewClient(config.RequestTimeout, config.UserAgent)
 
-	registry := prometheus.NewRegistry()
-	registry.MustRegister(collectors.NewGoCollector())
-	registry.MustRegister(collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
-	registry.MustRegister(collector.New(client, config.Systems, config.Timeout, log))
-
 	mux := http.NewServeMux()
-	mux.Handle("/metrics", promhttp.HandlerFor(registry, promhttp.HandlerOpts{
-		ErrorHandling: promhttp.ContinueOnError,
-		Registry:      registry,
-	}))
-	if config.Probe.Enabled == nil || *config.Probe.Enabled {
-		mux.HandleFunc("/probe", probeHandler(client, config, log))
-	}
+	mux.HandleFunc("/metrics", metricsHandler(client, config, log))
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte("ok\n"))
 	})
@@ -113,7 +110,7 @@ func main() {
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 
 	go func() {
-		log.Info("listening", "address", config.ListenAddress, "systems", len(config.Systems))
+		log.Info("listening", "address", config.ListenAddress, "modules", len(config.Modules))
 		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Error("the server stopped", "error", err)
 			os.Exit(1)
@@ -127,18 +124,23 @@ func main() {
 	_ = server.Shutdown(shutdownCtx)
 }
 
-// probeHandler reads one system that the query string names.
+// metricsHandler reads the one system that the query string names.
 //
-// Use it to scrape a system that the configuration file does not list. The
-// query parameters are target, name, per_vehicle_type, and max_concurrency.
+// The endpoint follows the multi-target pattern of blackbox_exporter. The
+// query parameters are target, module, and name. The configuration file holds
+// no target, so Prometheus owns the list of systems.
 //
 // The endpoint fetches the URL that the caller gives. Set allowed_hosts, or
 // keep the port closed to untrusted callers.
-func probeHandler(client *gbfs.Client, config *Config, log *slog.Logger) http.HandlerFunc {
-	allowed := make(map[string]bool, len(config.Probe.AllowedHosts))
-	for _, host := range config.Probe.AllowedHosts {
+func metricsHandler(client *gbfs.Client, config *Config, log *slog.Logger) http.HandlerFunc {
+	allowed := make(map[string]bool, len(config.AllowedHosts))
+	for _, host := range config.AllowedHosts {
 		allowed[strings.ToLower(host)] = true
 	}
+	// inFlight caps the scrapes that run at the same time. The cap must live
+	// outside the request, because a counter inside the request never fills.
+	inFlight := make(chan struct{}, config.MaxInFlight)
+
 	return func(w http.ResponseWriter, r *http.Request) {
 		target := r.URL.Query().Get("target")
 		if target == "" {
@@ -151,8 +153,16 @@ func probeHandler(client *gbfs.Client, config *Config, log *slog.Logger) http.Ha
 			return
 		}
 		if len(allowed) > 0 && !allowed[strings.ToLower(parsed.Hostname())] {
-			log.Warn("the probe target is not in allowed_hosts", "host", parsed.Hostname())
+			log.Warn("the target is not in allowed_hosts", "host", parsed.Hostname())
 			http.Error(w, "the host of the target is not in allowed_hosts", http.StatusForbidden)
+			return
+		}
+
+		module, err := selectModule(config.Modules, r.URL.Query().Get("module"))
+		if err != nil {
+			log.Warn("the request names a module that the configuration does not hold",
+				"module", r.URL.Query().Get("module"))
+			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 
@@ -160,14 +170,21 @@ func probeHandler(client *gbfs.Client, config *Config, log *slog.Logger) http.Ha
 		if name == "" {
 			name = parsed.Host
 		}
-		perType, _ := strconv.ParseBool(r.URL.Query().Get("per_vehicle_type"))
-		maxConcurrency, _ := strconv.Atoi(r.URL.Query().Get("max_concurrency"))
+
+		select {
+		case inFlight <- struct{}{}:
+			defer func() { <-inFlight }()
+		default:
+			http.Error(w, "too many scrapes run at the same time", http.StatusServiceUnavailable)
+			return
+		}
 
 		system := collector.System{
 			Name:           name,
 			URL:            target,
-			PerVehicleType: perType,
-			MaxConcurrency: maxConcurrency,
+			PerVehicleType: module.PerVehicleType,
+			Headers:        module.Headers,
+			MaxConcurrency: module.MaxConcurrency,
 		}
 		registry := prometheus.NewRegistry()
 		single := collector.New(client, []collector.System{system}, config.Timeout, log)
@@ -175,10 +192,23 @@ func probeHandler(client *gbfs.Client, config *Config, log *slog.Logger) http.Ha
 		// gives up on the scrape.
 		registry.MustRegister(single.WithContext(r.Context()))
 		promhttp.HandlerFor(registry, promhttp.HandlerOpts{
-			ErrorHandling:       promhttp.ContinueOnError,
-			MaxRequestsInFlight: config.Probe.MaxInFlight,
+			ErrorHandling: promhttp.ContinueOnError,
 		}).ServeHTTP(w, r)
 	}
+}
+
+// selectModule returns the module that the name selects. An empty name
+// selects the module called default, and the zero value if the configuration
+// holds no such module.
+func selectModule(modules map[string]Module, name string) (Module, error) {
+	if name == "" {
+		return modules["default"], nil
+	}
+	module, ok := modules[name]
+	if !ok {
+		return Module{}, fmt.Errorf("the configuration holds no module %q", name)
+	}
+	return module, nil
 }
 
 func indexHandler(w http.ResponseWriter, r *http.Request) {
@@ -191,8 +221,8 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
 <head><title>GBFS exporter</title></head>
 <body>
 <h1>GBFS exporter %s</h1>
-<p><a href="/metrics">Metrics of the configured systems</a></p>
-<p>To read one other system, open /probe?target=&lt;URL of gbfs.json&gt;</p>
+<p>Read one system with /metrics?target=&lt;URL of gbfs.json&gt;</p>
+<p>Add &amp;module=&lt;name&gt; for the settings of an operator, and &amp;name=&lt;label&gt; for the system label.</p>
 </body>
 </html>
 `, version)
@@ -206,7 +236,9 @@ func loadConfig(path string) (*Config, error) {
 	config := &Config{}
 	decoder := yaml.NewDecoder(bytes.NewReader(raw))
 	decoder.KnownFields(true)
-	if err := decoder.Decode(config); err != nil {
+	// An empty file gives io.EOF. Every setting has a default, so an empty
+	// file is valid.
+	if err := decoder.Decode(config); err != nil && !errors.Is(err, io.EOF) {
 		return nil, err
 	}
 
@@ -222,33 +254,16 @@ func loadConfig(path string) (*Config, error) {
 	if config.RequestTimeout > config.Timeout {
 		return nil, errors.New("request_timeout is higher than timeout")
 	}
-	if config.Probe.MaxInFlight <= 0 {
-		config.Probe.MaxInFlight = 4
+	if config.MaxInFlight <= 0 {
+		config.MaxInFlight = 4
 	}
 	if config.UserAgent == "" {
 		config.UserAgent = "gbfs_exporter/" + version
 	}
-	if len(config.Systems) == 0 {
-		return nil, errors.New("the configuration lists no system")
-	}
-
-	names := map[string]bool{}
-	for index, system := range config.Systems {
-		if system.URL == "" {
-			return nil, fmt.Errorf("system %d has no url", index+1)
+	for name, module := range config.Modules {
+		if module.MaxConcurrency < 0 {
+			return nil, fmt.Errorf("module %q has a negative max_concurrency", name)
 		}
-		parsed, err := url.Parse(system.URL)
-		if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") {
-			return nil, fmt.Errorf("system %d has a url that is not http or https", index+1)
-		}
-		if system.Name == "" {
-			config.Systems[index].Name = parsed.Host
-		}
-		name := config.Systems[index].Name
-		if names[name] {
-			return nil, fmt.Errorf("two systems use the name %q", name)
-		}
-		names[name] = true
 	}
 	return config, nil
 }

@@ -10,6 +10,10 @@ operators publish it. The exporter turns the feeds into Prometheus metrics.
 The exporter reads GBFS 2.x and GBFS 3.0. It finds the version from the
 auto-discovery file and adapts to the field names of that version.
 
+The exporter follows the multi-target pattern of `blackbox_exporter`. One
+scrape reads one system, and the query string names it. Prometheus holds the
+list of systems, so a new system needs no restart of the exporter.
+
 ## Warning
 
 Do not set a scrape interval below the ttl of the feeds. The exporter reads the
@@ -71,45 +75,66 @@ docker build -t gbfs_exporter .
 
 ## Configure
 
+The exporter follows the multi-target pattern of `blackbox_exporter`. The
+configuration file holds no target. Prometheus gives the target in the query
+string of each scrape.
+
 1. Copy the example file.
 
    ```
    cp config.example.yml config.yml
    ```
 
-2. Replace the systems with your own. The `url` is the auto-discovery file of
-   the system, normally `gbfs.json`.
+2. Set `allowed_hosts` to the hosts of your operators. Read the warning below.
 
-3. Set `max_concurrency` to 1 for an operator that answers HTTP 429 to parallel
-   requests. Such a system reads its feeds one after the other. Give `timeout`
-   enough room for all of them.
-
-4. Add an API key or a client name under `headers` if the operator asks for one.
+3. Add a module for each operator that needs a header, a lower concurrency, or
+   the per-type metric.
 
 The exporter refuses a configuration file that holds an unknown key. This
 catches a typing mistake at start.
 
-These settings apply to the whole exporter:
+### Warning
+
+The exporter fetches the URL that the caller gives. A caller who reaches the
+exporter port can therefore reach any address that the exporter can reach, and
+can read back whether that address answers. An empty `allowed_hosts` accepts
+every host. Set the list, or keep the port closed to untrusted callers.
+
+### Settings
 
 | Setting | Default | Meaning |
 | --- | --- | --- |
 | `listen_address` | `:9718` | Address that the exporter listens on. |
-| `timeout` | `30s` | Budget for one scrape, across every system. |
+| `timeout` | `30s` | Budget for one scrape, across every feed of the system. |
 | `request_timeout` | `10s` | Budget for one feed. It must not exceed `timeout`. |
 | `user_agent` | the version | User agent that the exporter sends. |
-| `probe.enabled` | `true` | Turn the `/probe` endpoint on or off. |
-| `probe.allowed_hosts` | empty | Hosts that `/probe` accepts. Empty accepts every host. |
-| `probe.max_in_flight` | `4` | Probes that run at the same time. |
+| `allowed_hosts` | empty | Hosts that the exporter accepts as a target. Empty accepts every host. |
+| `max_in_flight` | `4` | Scrapes that run at the same time. A scrape above the limit gets HTTP 503. |
+| `modules` | empty | Named settings for an operator. |
 
-These settings apply to one system:
+### Modules
+
+A module holds the settings that a query string must not carry, such as an API
+key. A scrape names one with the `module` parameter. A scrape without the
+parameter uses the module called `default`, and the values below if the file
+holds no such module.
 
 | Setting | Default | Meaning |
 | --- | --- | --- |
-| `name` | the host of the url | Value of the `system` label. |
-| `url` | none | The auto-discovery file. This setting is necessary. |
 | `per_vehicle_type` | `false` | Add one series per station and per vehicle type. |
 | `max_concurrency` | `0` | Feeds to read at the same time. 0 means no limit. |
 | `headers` | empty | Headers to add to every request. |
+
+```yaml
+modules:
+  default: {}
+  entur:
+    max_concurrency: 1
+    per_vehicle_type: true
+    headers:
+      ET-Client-Name: my-company-gbfs-exporter
+```
+
 
 ## Run
 
@@ -130,14 +155,36 @@ These endpoints are available:
 
 | Path | Content |
 | --- | --- |
-| `/metrics` | The metrics of every configured system. |
-| `/probe` | The metrics of one system that the query string names. |
+| `/metrics` | The metrics of the one system that `target` names. |
 | `/healthz` | The text `ok`. |
+| `/` | A short landing page. |
+
+`/metrics` accepts these query parameters:
+
+| Parameter | Meaning |
+| --- | --- |
+| `target` | The URL of the auto-discovery file. This parameter is necessary. |
+| `module` | The module of the operator. The default is the module called `default`. |
+| `name` | The value of the `system` label. The default is the host of the target. |
+
+Example:
+
+```
+curl 'http://localhost:9718/metrics?target=https://gbfs.urbansharing.com/oslobysykkel.no/gbfs.json&name=oslo'
+```
+
+The exporter serves no metric about itself. `/metrics` returns GBFS data only,
+because the exporter serves one endpoint. Watch the exporter with the `up`
+metric and the `scrape_duration_seconds` metric of Prometheus.
+
 
 ## Metrics
 
 Every metric is a gauge. Every metric carries the `system` label, which holds
-the `name` from the configuration file.
+the `name` parameter of the request, or the host of the target.
+
+One scrape returns the metrics of one system. Prometheus adds the `instance`
+label, which holds the URL of the feed.
 
 | Metric | Extra labels | Meaning |
 | --- | --- | --- |
@@ -182,56 +229,21 @@ Some operators list docked vehicles in the vehicle feed. For those operators,
 `gbfs_system_free_vehicles` and `gbfs_system_vehicles_available` count the same
 vehicle twice. Check the feed of your operator before you add the two metrics.
 
-## Scrape one system that the configuration does not list
-
-### Warning
-
-The `/probe` endpoint fetches the URL that the caller gives. A caller who
-reaches the exporter port can therefore reach any address that the exporter can
-reach, and can read back whether that address answers. Set `allowed_hosts`, or
-set `enabled: false`, or keep the port closed to untrusted callers.
-
-### Use
-
-Use the `/probe` endpoint. It accepts these query parameters:
-
-| Parameter | Meaning |
-| --- | --- |
-| `target` | The URL of the auto-discovery file. This parameter is necessary. |
-| `name` | The value of the `system` label. The default is the host of the target. |
-| `per_vehicle_type` | Set it to `true` to get the per-type metric. |
-| `max_concurrency` | Number of feeds to read at the same time. |
-
-Example:
-
-```
-curl 'http://localhost:9718/probe?target=https://gbfs.urbansharing.com/oslobysykkel.no/gbfs.json&name=oslo'
-```
-
 ## Prometheus configuration
 
-For the systems in the configuration file, use a static target:
+Prometheus holds the list of systems. A relabel rule moves each target into
+the `target` parameter.
 
 ```yaml
 scrape_configs:
   - job_name: gbfs
     scrape_interval: 60s
     scrape_timeout: 45s
-    static_configs:
-      - targets: ["localhost:9718"]
-```
-
-For the `/probe` endpoint, use a relabel rule:
-
-```yaml
-scrape_configs:
-  - job_name: gbfs_probe
-    scrape_interval: 60s
-    scrape_timeout: 45s
-    metrics_path: /probe
+    metrics_path: /metrics
     static_configs:
       - targets:
           - https://gbfs.urbansharing.com/oslobysykkel.no/gbfs.json
+          - https://gbfs.lyft.com/gbfs/2.3/bkn/gbfs.json
     relabel_configs:
       - source_labels: [__address__]
         target_label: __param_target
@@ -240,6 +252,43 @@ scrape_configs:
       - target_label: __address__
         replacement: localhost:9718
 ```
+
+The `system` label falls back to the host of the target. Two systems of one
+operator therefore share a label value. Give each target its own `name` with a
+second job, or with a label in the target list:
+
+```yaml
+    static_configs:
+      - targets: [https://gbfs.urbansharing.com/oslobysykkel.no/gbfs.json]
+        labels: {name: oslo}
+    relabel_configs:
+      - source_labels: [name]
+        target_label: __param_name
+      - regex: name
+        action: labeldrop
+```
+
+For an operator that needs a module, add the `module` parameter to the job:
+
+```yaml
+  - job_name: gbfs_entur
+    metrics_path: /metrics
+    params:
+      module: [entur]
+    static_configs:
+      - targets: [https://api.entur.io/mobility/v2/gbfs/v3/trondheimbysykkel/gbfs]
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: localhost:9718
+```
+
+Swap `static_configs` for `file_sd_configs` to change the list without a
+restart of Prometheus.
+
 
 ## Grafana dashboard
 
