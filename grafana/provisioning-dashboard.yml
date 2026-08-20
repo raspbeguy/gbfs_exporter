@@ -1,0 +1,16 @@
+# Grafana dashboard provisioning. Copy this file to
+# /etc/grafana/provisioning/dashboards/gbfs.yml and copy
+# gbfs-dashboard.json to /var/lib/grafana/dashboards/.
+apiVersion: 1
+
+providers:
+  - name: gbfs
+    orgId: 1
+    folder: GBFS
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 60
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: false

@@ -215,6 +215,39 @@ scrape_configs:
         replacement: localhost:9718
 ```
 
+## Grafana dashboard
+
+The folder `grafana/` holds a dashboard.
+
+To import it by hand, follow these steps:
+
+1. Open Grafana.
+2. Select **Dashboards**, then **New**, then **Import**.
+3. Upload `grafana/gbfs-dashboard.json`.
+4. Select your Prometheus data source.
+
+To install it with provisioning, follow these steps:
+
+1. Copy `grafana/gbfs-dashboard.json` to `/var/lib/grafana/dashboards/`.
+2. Copy `grafana/provisioning-dashboard.yml` to
+   `/etc/grafana/provisioning/dashboards/gbfs.yml`.
+3. Restart Grafana.
+
+The dashboard has two variables. **Data source** selects the Prometheus server.
+**System** selects one or more systems, and it accepts several values at once.
+
+The dashboard holds four rows:
+
+| Row | Content |
+| --- | --- |
+| Overview | Systems down, station count, vehicle count, dock count, and fill rate. |
+| Availability | Vehicles and docks over time, free-floating vehicles by state, and the count of empty and full stations. |
+| Stations | A map of every station, and a table of the twenty emptiest stations. |
+| Feed health | The state of each feed over time, and the metadata of each system. |
+
+The map and the table join `gbfs_station_info` to get the station name and the
+position. The dashboard needs Grafana 10 or higher for the map panel.
+
 ## Example queries
 
 Stations that hold no vehicle:
