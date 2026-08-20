@@ -30,7 +30,9 @@ import (
 	"github.com/raspbeguy/gbfs_exporter/internal/gbfs"
 )
 
-const version = "0.1.0"
+// version is the build version. The release workflow overrides it with
+// -ldflags "-X main.version=...".
+var version = "0.1.0"
 
 // Config is the content of the configuration file.
 type Config struct {

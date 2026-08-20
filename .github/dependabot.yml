@@ -1,0 +1,54 @@
+# Dependabot opens a pull request when a dependency gets a new version. Each
+# ecosystem is grouped, so one pull request carries every update of that week.
+version: 2
+
+updates:
+  # Go modules of go.mod.
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Europe/Paris
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      go-minor-and-patch:
+        patterns: ["*"]
+        update-types:
+          - minor
+          - patch
+    # A major update arrives as its own pull request, because it can break the
+    # build.
+
+  # Actions of .github/workflows.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Europe/Paris
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "ci(deps)"
+    groups:
+      github-actions:
+        patterns: ["*"]
+
+  # Base images of the Dockerfile.
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Europe/Paris
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(docker)"
+    groups:
+      docker-images:
+        patterns: ["*"]
