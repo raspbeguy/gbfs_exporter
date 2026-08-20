@@ -142,7 +142,6 @@ the `name` from the configuration file.
 | Metric | Extra labels | Meaning |
 | --- | --- | --- |
 | `gbfs_up` | | 1 if the exporter read every feed, 0 if one feed failed. |
-
 | `gbfs_system_info` | `system_id`, `name`, `version`, `timezone` | System metadata. The value is always 1. |
 | `gbfs_station_info` | `station_id`, `name`, `lat`, `lon` | Station metadata. The value is always 1. |
 | `gbfs_station_capacity` | `station_id` | Number of docks that the station has. |
