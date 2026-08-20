@@ -1,0 +1,203 @@
+package collector_test
+
+import (
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/prometheus/client_golang/prometheus/testutil"
+
+	"github.com/raspbeguy/gbfs_exporter/internal/collector"
+	"github.com/raspbeguy/gbfs_exporter/internal/gbfs"
+)
+
+// version2Feeds is a small GBFS 2.3 system. The station names are plain
+// strings, the counters use the word "bikes", and one station reports the
+// boolean fields as numbers.
+var version2Feeds = map[string]string{
+	"/gbfs.json": `{"last_updated":1609459200,"ttl":60,"version":"2.3","data":{"en":{"feeds":[
+		{"name":"system_information","url":"system_information.json"},
+		{"name":"station_information","url":"station_information.json"},
+		{"name":"station_status","url":"station_status.json"},
+		{"name":"free_bike_status","url":"free_bike_status.json"},
+		{"name":"vehicle_types","url":"vehicle_types.json"}]}}}`,
+	"/system_information.json": `{"data":{"system_id":"demo","name":"Demo Bikes","timezone":"Europe/Paris"}}`,
+	"/station_information.json": `{"data":{"stations":[
+		{"station_id":"1","name":"Gare","lat":48.8,"lon":2.3,"capacity":20},
+		{"station_id":"2","name":"Place","lat":48.9,"lon":2.4}]}}`,
+	"/station_status.json": `{"data":{"stations":[
+		{"station_id":"1","num_bikes_available":3,"num_bikes_disabled":1,"num_docks_available":16,
+		 "is_installed":true,"is_renting":true,"is_returning":true,
+		 "vehicle_types_available":[{"vehicle_type_id":"bike","count":2},{"vehicle_type_id":"ebike","count":1}]},
+		{"station_id":"2","num_bikes_available":5,"num_docks_available":0,
+		 "is_installed":1,"is_renting":0,"is_returning":1}]}}`,
+	"/free_bike_status.json": `{"data":{"bikes":[
+		{"bike_id":"a","vehicle_type_id":"ebike","is_reserved":false,"is_disabled":false},
+		{"bike_id":"b","vehicle_type_id":"ebike","is_reserved":true,"is_disabled":false},
+		{"bike_id":"c","vehicle_type_id":"bike","is_reserved":false,"is_disabled":true}]}}`,
+	"/vehicle_types.json": `{"data":{"vehicle_types":[
+		{"vehicle_type_id":"bike","form_factor":"bicycle","propulsion_type":"human"},
+		{"vehicle_type_id":"ebike","form_factor":"bicycle","propulsion_type":"electric_assist"}]}}`,
+}
+
+// version3Feeds is the same system in GBFS 3.0. The discovery file has no
+// language block, the timestamp is RFC3339, the names are translated lists,
+// and the counters use the word "vehicles".
+var version3Feeds = map[string]string{
+	"/gbfs.json": `{"last_updated":"2021-01-01T00:00:00Z","ttl":60,"version":"3.0","data":{"feeds":[
+		{"name":"system_information","url":"system_information.json"},
+		{"name":"station_information","url":"station_information.json"},
+		{"name":"station_status","url":"station_status.json"},
+		{"name":"vehicle_status","url":"vehicle_status.json"},
+		{"name":"vehicle_types","url":"vehicle_types.json"}]}}`,
+	"/system_information.json": `{"data":{"system_id":"demo","name":[{"text":"Demo Bikes","language":"en"}],"timezone":"Europe/Paris"}}`,
+	"/station_information.json": `{"data":{"stations":[
+		{"station_id":"1","name":[{"text":"Gare","language":"fr"}],"lat":48.8,"lon":2.3,"capacity":20}]}}`,
+	"/station_status.json": `{"data":{"stations":[
+		{"station_id":"1","num_vehicles_available":3,"num_vehicles_disabled":1,"num_docks_available":16,
+		 "is_installed":true,"is_renting":true,"is_returning":true}]}}`,
+	"/vehicle_status.json": `{"data":{"vehicles":[
+		{"vehicle_id":"a","vehicle_type_id":"ebike","is_reserved":false,"is_disabled":false}]}}`,
+	"/vehicle_types.json": `{"data":{"vehicle_types":[
+		{"vehicle_type_id":"ebike","form_factor":"bicycle","propulsion_type":"electric_assist"}]}}`,
+}
+
+func fakeSystem(t *testing.T, files map[string]string) *httptest.Server {
+	t.Helper()
+	mux := http.NewServeMux()
+	for path, body := range files {
+		body := body
+		mux.HandleFunc(path, func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(body))
+		})
+	}
+	server := httptest.NewServer(mux)
+	t.Cleanup(server.Close)
+	return server
+}
+
+func newCollector(t *testing.T, url string, perType bool) *collector.Collector {
+	t.Helper()
+	client := gbfs.NewClient(5*time.Second, "gbfs_exporter/test")
+	system := collector.System{Name: "demo", URL: url, PerVehicleType: perType}
+	return collector.New(client, []collector.System{system}, 5*time.Second, slog.New(slog.DiscardHandler))
+}
+
+func TestCollectVersion2(t *testing.T) {
+	server := fakeSystem(t, version2Feeds)
+	subject := newCollector(t, server.URL+"/gbfs.json", true)
+
+	expected := `
+# HELP gbfs_free_vehicles Number of vehicles in the vehicle feed, grouped by type and state.
+# TYPE gbfs_free_vehicles gauge
+gbfs_free_vehicles{form_factor="bicycle",state="available",system="demo",vehicle_type_id="ebike"} 1
+gbfs_free_vehicles{form_factor="bicycle",state="reserved",system="demo",vehicle_type_id="ebike"} 1
+gbfs_free_vehicles{form_factor="bicycle",state="disabled",system="demo",vehicle_type_id="bike"} 1
+# HELP gbfs_station_installed 1 if the station is on the street, 0 if it is not.
+# TYPE gbfs_station_installed gauge
+gbfs_station_installed{station_id="1",system="demo"} 1
+gbfs_station_installed{station_id="2",system="demo"} 1
+# HELP gbfs_station_renting 1 if the station gives out vehicles, 0 if it does not.
+# TYPE gbfs_station_renting gauge
+gbfs_station_renting{station_id="1",system="demo"} 1
+gbfs_station_renting{station_id="2",system="demo"} 0
+# HELP gbfs_station_vehicles_available Number of vehicles at the station that a rider can take.
+# TYPE gbfs_station_vehicles_available gauge
+gbfs_station_vehicles_available{station_id="1",system="demo"} 3
+gbfs_station_vehicles_available{station_id="2",system="demo"} 5
+# HELP gbfs_station_vehicles_available_by_type Number of vehicles of one type at the station that a rider can take.
+# TYPE gbfs_station_vehicles_available_by_type gauge
+gbfs_station_vehicles_available_by_type{form_factor="bicycle",station_id="1",system="demo",vehicle_type_id="bike"} 2
+gbfs_station_vehicles_available_by_type{form_factor="bicycle",station_id="1",system="demo",vehicle_type_id="ebike"} 1
+# HELP gbfs_station_info Station metadata. The value is always 1.
+# TYPE gbfs_station_info gauge
+gbfs_station_info{lat="48.8",lon="2.3",name="Gare",station_id="1",system="demo"} 1
+gbfs_station_info{lat="48.9",lon="2.4",name="Place",station_id="2",system="demo"} 1
+# HELP gbfs_station_capacity Number of docks that the station has.
+# TYPE gbfs_station_capacity gauge
+gbfs_station_capacity{station_id="1",system="demo"} 20
+# HELP gbfs_system_free_vehicles Number of vehicles in the vehicle feed.
+# TYPE gbfs_system_free_vehicles gauge
+gbfs_system_free_vehicles{system="demo"} 3
+# HELP gbfs_system_stations Number of stations in the station feed.
+# TYPE gbfs_system_stations gauge
+gbfs_system_stations{system="demo"} 2
+# HELP gbfs_system_vehicles_available Number of vehicles at all stations that a rider can take.
+# TYPE gbfs_system_vehicles_available gauge
+gbfs_system_vehicles_available{system="demo"} 8
+# HELP gbfs_system_vehicles_disabled Number of vehicles at all stations that a rider cannot take.
+# TYPE gbfs_system_vehicles_disabled gauge
+gbfs_system_vehicles_disabled{system="demo"} 1
+# HELP gbfs_system_docks_available Number of docks at all stations that accept a vehicle.
+# TYPE gbfs_system_docks_available gauge
+gbfs_system_docks_available{system="demo"} 16
+# HELP gbfs_system_info System metadata. The value is always 1.
+# TYPE gbfs_system_info gauge
+gbfs_system_info{name="Demo Bikes",system="demo",system_id="demo",timezone="Europe/Paris",version="2.3"} 1
+# HELP gbfs_up 1 if the exporter read every feed of the system, 0 if one feed failed.
+# TYPE gbfs_up gauge
+# HELP gbfs_station_docks_available Number of docks at the station that accept a vehicle.
+# TYPE gbfs_station_docks_available gauge
+gbfs_station_docks_available{station_id="1",system="demo"} 16
+gbfs_station_docks_available{station_id="2",system="demo"} 0
+# HELP gbfs_station_returning 1 if the station takes back vehicles, 0 if it does not.
+# TYPE gbfs_station_returning gauge
+gbfs_station_returning{station_id="1",system="demo"} 1
+gbfs_station_returning{station_id="2",system="demo"} 1
+# HELP gbfs_station_vehicles_disabled Number of vehicles at the station that a rider cannot take.
+# TYPE gbfs_station_vehicles_disabled gauge
+gbfs_station_vehicles_disabled{station_id="1",system="demo"} 1
+gbfs_up{system="demo"} 1
+`
+	if err := testutil.CollectAndCompare(subject, strings.NewReader(expected)); err != nil {
+		t.Error(err)
+	}
+}
+
+func TestCollectVersion3(t *testing.T) {
+	server := fakeSystem(t, version3Feeds)
+	subject := newCollector(t, server.URL+"/gbfs.json", false)
+
+	expected := `
+# HELP gbfs_station_vehicles_available Number of vehicles at the station that a rider can take.
+# TYPE gbfs_station_vehicles_available gauge
+gbfs_station_vehicles_available{station_id="1",system="demo"} 3
+# HELP gbfs_station_info Station metadata. The value is always 1.
+# TYPE gbfs_station_info gauge
+gbfs_station_info{lat="48.8",lon="2.3",name="Gare",station_id="1",system="demo"} 1
+# HELP gbfs_system_info System metadata. The value is always 1.
+# TYPE gbfs_system_info gauge
+gbfs_system_info{name="Demo Bikes",system="demo",system_id="demo",timezone="Europe/Paris",version="3.0"} 1
+# HELP gbfs_free_vehicles Number of vehicles in the vehicle feed, grouped by type and state.
+# TYPE gbfs_free_vehicles gauge
+gbfs_free_vehicles{form_factor="bicycle",state="available",system="demo",vehicle_type_id="ebike"} 1
+`
+	names := []string{
+		"gbfs_station_vehicles_available", "gbfs_station_info",
+		"gbfs_system_info", "gbfs_free_vehicles",
+	}
+	if err := testutil.CollectAndCompare(subject, strings.NewReader(expected), names...); err != nil {
+		t.Error(err)
+	}
+}
+
+func TestCollectReportsDownSystem(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "gone", http.StatusInternalServerError)
+	}))
+	t.Cleanup(server.Close)
+	subject := newCollector(t, server.URL+"/gbfs.json", false)
+
+	expected := `
+# HELP gbfs_up 1 if the exporter read every feed of the system, 0 if one feed failed.
+# TYPE gbfs_up gauge
+gbfs_up{system="demo"} 0
+`
+	if err := testutil.CollectAndCompare(subject, strings.NewReader(expected)); err != nil {
+		t.Error(err)
+	}
+}

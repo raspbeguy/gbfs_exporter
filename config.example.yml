@@ -1,0 +1,34 @@
+# Address that the exporter listens on.
+listen_address: ":9718"
+
+# Time limit for one scrape. The exporter reads every feed of every system
+# inside this limit. Keep the limit below the Prometheus scrape_timeout.
+timeout: 15s
+
+# User agent that the exporter sends. Some operators ask for a contact address.
+user_agent: "gbfs_exporter/0.1.0 (+https://example.org/contact)"
+
+# One entry per GBFS system. The url is the auto-discovery file, gbfs.json.
+systems:
+  # A GBFS 2.x system.
+  - name: oslo
+    url: https://gbfs.urbansharing.com/oslobysykkel.no/gbfs.json
+
+  # A GBFS 3.0 system behind an operator that limits parallel requests.
+  - name: trondheim
+    url: https://api.entur.io/mobility/v2/gbfs/v3/trondheimbysykkel/gbfs
+    # Set per_vehicle_type to true to get one series per station and per
+    # vehicle type. This multiplies the number of series. Leave it off for a
+    # large system.
+    per_vehicle_type: true
+    # Set max_concurrency to 1 if the operator answers HTTP 429 to parallel
+    # requests. A value of 0 means no limit.
+    max_concurrency: 1
+    # Headers go with every request to this system. Use them for an API key or
+    # for a client name that the operator asks for.
+    headers:
+      ET-Client-Name: my-company-gbfs-exporter
+
+  # A large GBFS 2.3 system.
+  - name: citibike
+    url: https://gbfs.lyft.com/gbfs/2.3/bkn/gbfs.json
