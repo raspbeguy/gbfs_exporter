@@ -1,5 +1,7 @@
 # gbfs_exporter
 
+[![CI](https://github.com/raspbeguy/gbfs_exporter/actions/workflows/ci.yml/badge.svg)](https://github.com/raspbeguy/gbfs_exporter/actions/workflows/ci.yml)
+
 A Prometheus exporter for GBFS feeds.
 
 GBFS is the General Bikeshare Feed Specification. Bike share and scooter share
@@ -27,6 +29,31 @@ The exporter reads these feeds of each system:
 
 A missing feed is not an error. A system with docks has no vehicle feed. A
 free-floating system has no station feed.
+
+## Install
+
+### Container image
+
+Each release pushes an image to the GitHub container registry. The tag points
+to a manifest list, so Docker pulls the `linux/amd64` image or the
+`linux/arm64` image to match your machine.
+
+```
+docker pull ghcr.io/raspbeguy/gbfs_exporter:latest
+```
+
+### Binary
+
+Each release carries an archive for linux, macOS, and FreeBSD, on amd64 and on
+arm64. Download the archive of your platform from the releases page, then
+verify it against `checksums.txt`:
+
+```
+sha256sum -c checksums.txt --ignore-missing
+```
+
+The archive holds the binary, the example configuration, and the Grafana
+dashboard.
 
 ## Build
 
