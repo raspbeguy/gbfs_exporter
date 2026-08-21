@@ -95,9 +95,9 @@ func TestCollectVersion2(t *testing.T) {
 	expected := `
 # HELP gbfs_free_vehicles Number of vehicles in the vehicle feed, grouped by type and state.
 # TYPE gbfs_free_vehicles gauge
-gbfs_free_vehicles{form_factor="bicycle",state="available",system="demo",vehicle_type_id="ebike"} 1
-gbfs_free_vehicles{form_factor="bicycle",state="reserved",system="demo",vehicle_type_id="ebike"} 1
-gbfs_free_vehicles{form_factor="bicycle",state="disabled",system="demo",vehicle_type_id="bike"} 1
+gbfs_free_vehicles{form_factor="bicycle",propulsion_type="electric_assist",state="available",system="demo",vehicle_type_id="ebike"} 1
+gbfs_free_vehicles{form_factor="bicycle",propulsion_type="electric_assist",state="reserved",system="demo",vehicle_type_id="ebike"} 1
+gbfs_free_vehicles{form_factor="bicycle",propulsion_type="human",state="disabled",system="demo",vehicle_type_id="bike"} 1
 # HELP gbfs_station_installed 1 if the station is on the street, 0 if it is not.
 # TYPE gbfs_station_installed gauge
 gbfs_station_installed{station_id="1",system="demo"} 1
@@ -112,8 +112,8 @@ gbfs_station_vehicles_available{station_id="1",system="demo"} 3
 gbfs_station_vehicles_available{station_id="2",system="demo"} 5
 # HELP gbfs_station_vehicles_available_by_type Number of vehicles of one type at the station that a rider can take.
 # TYPE gbfs_station_vehicles_available_by_type gauge
-gbfs_station_vehicles_available_by_type{form_factor="bicycle",station_id="1",system="demo",vehicle_type_id="bike"} 2
-gbfs_station_vehicles_available_by_type{form_factor="bicycle",station_id="1",system="demo",vehicle_type_id="ebike"} 1
+gbfs_station_vehicles_available_by_type{form_factor="bicycle",propulsion_type="human",station_id="1",system="demo",vehicle_type_id="bike"} 2
+gbfs_station_vehicles_available_by_type{form_factor="bicycle",propulsion_type="electric_assist",station_id="1",system="demo",vehicle_type_id="ebike"} 1
 # HELP gbfs_station_info Station metadata. The value is always 1.
 # TYPE gbfs_station_info gauge
 gbfs_station_info{lat="48.8",lon="2.3",name="Gare",station_id="1",system="demo"} 1
@@ -186,7 +186,7 @@ gbfs_station_info{lat="48.8",lon="2.3",name="Gare",station_id="1",system="demo"}
 gbfs_system_info{name="Demo Bikes",system="demo",system_id="demo",timezone="Europe/Paris",version="3.0"} 1
 # HELP gbfs_free_vehicles Number of vehicles in the vehicle feed, grouped by type and state.
 # TYPE gbfs_free_vehicles gauge
-gbfs_free_vehicles{form_factor="bicycle",state="available",system="demo",vehicle_type_id="ebike"} 1
+gbfs_free_vehicles{form_factor="bicycle",propulsion_type="electric_assist",state="available",system="demo",vehicle_type_id="ebike"} 1
 `
 	names := []string{
 		"gbfs_station_vehicles_available", "gbfs_station_info",
@@ -395,4 +395,78 @@ func TestCollectFeedDurationIsPresent(t *testing.T) {
 	if got != 6 {
 		t.Fatalf("got %d duration series, want 6", got)
 	}
+}
+
+// TestCollectVehicleTypeInfo checks the vehicle type metadata metric. The
+// form factor of both fixture types is bicycle, so only propulsion_type tells
+// an electric bike from a classic one.
+func TestCollectVehicleTypeInfo(t *testing.T) {
+	server := fakeSystem(t, version2Feeds)
+	subject := newCollector(t, server.URL+"/gbfs.json", false)
+
+	expected := `
+# HELP gbfs_vehicle_type_info Vehicle type metadata. The value is always 1.
+# TYPE gbfs_vehicle_type_info gauge
+gbfs_vehicle_type_info{form_factor="bicycle",name="",propulsion_type="human",system="demo",vehicle_type_id="bike"} 1
+gbfs_vehicle_type_info{form_factor="bicycle",name="",propulsion_type="electric_assist",system="demo",vehicle_type_id="ebike"} 1
+`
+	if err := testutil.CollectAndCompare(subject, strings.NewReader(expected), "gbfs_vehicle_type_info"); err != nil {
+		t.Error(err)
+	}
+}
+
+// TestVehicleTypeFallbacks checks the two cases where a vehicle type does not
+// resolve. GBFS says a system without vehicle_types.json carries
+// non-motorized bicycles. A system that publishes the feed but did not answer
+// is unknown, and the exporter must not claim a bicycle.
+func TestVehicleTypeFallbacks(t *testing.T) {
+	t.Run("the system does not publish the feed", func(t *testing.T) {
+		files := map[string]string{}
+		for path, body := range version2Feeds {
+			if path == "/vehicle_types.json" {
+				continue
+			}
+			files[path] = body
+		}
+		// Drop the feed from the discovery file as well.
+		files["/gbfs.json"] = strings.Replace(version2Feeds["/gbfs.json"],
+			`,
+		{"name":"vehicle_types","url":"vehicle_types.json"}`, "", 1)
+		server := fakeSystem(t, files)
+		subject := newCollector(t, server.URL+"/gbfs.json", false)
+
+		expected := `
+# HELP gbfs_free_vehicles Number of vehicles in the vehicle feed, grouped by type and state.
+# TYPE gbfs_free_vehicles gauge
+gbfs_free_vehicles{form_factor="bicycle",propulsion_type="human",state="available",system="demo",vehicle_type_id="ebike"} 1
+gbfs_free_vehicles{form_factor="bicycle",propulsion_type="human",state="reserved",system="demo",vehicle_type_id="ebike"} 1
+gbfs_free_vehicles{form_factor="bicycle",propulsion_type="human",state="disabled",system="demo",vehicle_type_id="bike"} 1
+`
+		if err := testutil.CollectAndCompare(subject, strings.NewReader(expected), "gbfs_free_vehicles"); err != nil {
+			t.Error(err)
+		}
+	})
+
+	t.Run("the feed is published but failed", func(t *testing.T) {
+		files := map[string]string{}
+		for path, body := range version2Feeds {
+			if path == "/vehicle_types.json" {
+				continue
+			}
+			files[path] = body
+		}
+		server := fakeSystem(t, files)
+		subject := newCollector(t, server.URL+"/gbfs.json", false)
+
+		expected := `
+# HELP gbfs_free_vehicles Number of vehicles in the vehicle feed, grouped by type and state.
+# TYPE gbfs_free_vehicles gauge
+gbfs_free_vehicles{form_factor="unknown",propulsion_type="unknown",state="available",system="demo",vehicle_type_id="ebike"} 1
+gbfs_free_vehicles{form_factor="unknown",propulsion_type="unknown",state="reserved",system="demo",vehicle_type_id="ebike"} 1
+gbfs_free_vehicles{form_factor="unknown",propulsion_type="unknown",state="disabled",system="demo",vehicle_type_id="bike"} 1
+`
+		if err := testutil.CollectAndCompare(subject, strings.NewReader(expected), "gbfs_free_vehicles"); err != nil {
+			t.Error(err)
+		}
+	})
 }

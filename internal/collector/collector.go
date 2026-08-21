@@ -62,6 +62,11 @@ var (
 		"System metadata. The value is always 1.",
 		[]string{"system", "system_id", "name", "version", "timezone"}, nil)
 
+	vehicleTypeInfoDesc = prometheus.NewDesc(
+		namespace+"_vehicle_type_info",
+		"Vehicle type metadata. The value is always 1.",
+		[]string{"system", "vehicle_type_id", "name", "form_factor", "propulsion_type"}, nil)
+
 	stationInfoDesc = prometheus.NewDesc(
 		namespace+"_station_info",
 		"Station metadata. The value is always 1.",
@@ -110,12 +115,12 @@ var (
 	stationTypeDesc = prometheus.NewDesc(
 		namespace+"_station_vehicles_available_by_type",
 		"Number of vehicles of one type at the station that a rider can take.",
-		[]string{"system", "station_id", "vehicle_type_id", "form_factor"}, nil)
+		[]string{"system", "station_id", "vehicle_type_id", "form_factor", "propulsion_type"}, nil)
 
 	freeVehiclesDesc = prometheus.NewDesc(
 		namespace+"_free_vehicles",
 		"Number of vehicles in the vehicle feed, grouped by type and state.",
-		[]string{"system", "vehicle_type_id", "form_factor", "state"}, nil)
+		[]string{"system", "vehicle_type_id", "form_factor", "propulsion_type", "state"}, nil)
 
 	systemStationsDesc = prometheus.NewDesc(
 		namespace+"_system_stations",
@@ -144,7 +149,7 @@ var (
 
 	allDescs = []*prometheus.Desc{
 		upDesc, feedUpDesc, feedLastUpdatedDesc, feedTTLDesc, feedDurationDesc,
-		systemInfoDesc, stationInfoDesc, stationCapacityDesc,
+		systemInfoDesc, vehicleTypeInfoDesc, stationInfoDesc, stationCapacityDesc,
 		stationVehiclesAvailableDesc, stationVehiclesDisabledDesc,
 		stationDocksAvailableDesc, stationDocksDisabledDesc,
 		stationInstalledDesc, stationRentingDesc, stationReturningDesc,
@@ -225,6 +230,14 @@ func (c *Collector) collectSystem(ctx context.Context, ch chan<- prometheus.Metr
 	if snapshot.SystemID != "" || snapshot.SystemName != "" {
 		gauge(ch, systemInfoDesc, 1, system.Name, snapshot.SystemID,
 			snapshot.SystemName, snapshot.Version, snapshot.Timezone)
+	}
+
+	for typeID, vehicleType := range snapshot.VehicleTypes {
+		if typeID == "" {
+			continue
+		}
+		gauge(ch, vehicleTypeInfoDesc, 1, system.Name, typeID, string(vehicleType.Name),
+			orUnknown(vehicleType.FormFactor), orUnknown(vehicleType.PropulsionType))
 	}
 
 	c.collectStations(ch, system, snapshot)
@@ -311,8 +324,9 @@ func (c *Collector) collectStations(ch chan<- prometheus.Metric, system System, 
 				continue
 			}
 			perType[entry.VehicleTypeID] = true
+			form, propulsion := vehicleTypeOf(snapshot, entry.VehicleTypeID)
 			gauge(ch, stationTypeDesc, float64(entry.Count), system.Name,
-				status.StationID, entry.VehicleTypeID, formFactor(snapshot, entry.VehicleTypeID))
+				status.StationID, entry.VehicleTypeID, form, propulsion)
 		}
 	}
 
@@ -336,6 +350,7 @@ func (c *Collector) collectStations(ch chan<- prometheus.Metric, system System, 
 type vehicleKey struct {
 	typeID     string
 	formFactor string
+	propulsion string
 	state      string
 }
 
@@ -345,15 +360,17 @@ func (c *Collector) collectVehicles(ch chan<- prometheus.Metric, system System, 
 	}
 	counts := map[vehicleKey]float64{}
 	for _, vehicle := range snapshot.Vehicles {
+		form, propulsion := vehicleTypeOf(snapshot, vehicle.VehicleTypeID)
 		key := vehicleKey{
 			typeID:     vehicle.VehicleTypeID,
-			formFactor: formFactor(snapshot, vehicle.VehicleTypeID),
+			formFactor: form,
+			propulsion: propulsion,
 			state:      vehicleState(vehicle),
 		}
 		counts[key]++
 	}
 	for key, count := range counts {
-		gauge(ch, freeVehiclesDesc, count, system.Name, key.typeID, key.formFactor, key.state)
+		gauge(ch, freeVehiclesDesc, count, system.Name, key.typeID, key.formFactor, key.propulsion, key.state)
 	}
 	gauge(ch, systemFreeVehiclesDesc, float64(len(snapshot.Vehicles)), system.Name)
 }
@@ -371,11 +388,27 @@ func vehicleState(vehicle gbfs.Vehicle) string {
 	}
 }
 
-func formFactor(snapshot *gbfs.Snapshot, typeID string) string {
-	if vehicleType, ok := snapshot.VehicleTypes[typeID]; ok && vehicleType.FormFactor != "" {
-		return vehicleType.FormFactor
+// vehicleTypeOf returns the form factor and the drive of one vehicle type.
+//
+// GBFS says that a system without vehicle_types.json carries non-motorized
+// bicycles only, so that system reports bicycle and human. A system that
+// publishes the feed but did not answer is a different case: the type is
+// unknown, and the exporter must not claim a bicycle.
+func vehicleTypeOf(snapshot *gbfs.Snapshot, typeID string) (string, string) {
+	if vehicleType, ok := snapshot.VehicleTypes[typeID]; ok {
+		return orUnknown(vehicleType.FormFactor), orUnknown(vehicleType.PropulsionType)
 	}
-	return "unknown"
+	if _, published := snapshot.Feeds[gbfs.FeedVehicleTypes]; !published {
+		return "bicycle", "human"
+	}
+	return "unknown", "unknown"
+}
+
+func orUnknown(value string) string {
+	if value == "" {
+		return "unknown"
+	}
+	return value
 }
 
 func formatCoordinate(value gbfs.Float) string {

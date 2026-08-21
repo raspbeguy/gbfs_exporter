@@ -195,6 +195,7 @@ label, which holds the URL of the feed.
 | `gbfs_feed_duration_seconds` | `feed` | Seconds that the exporter took to read the feed. |
 | `gbfs_system_info` | `system_id`, `name`, `version`, `timezone` | System metadata. The value is always 1. |
 | `gbfs_station_info` | `station_id`, `name`, `lat`, `lon` | Station metadata. The value is always 1. |
+| `gbfs_vehicle_type_info` | `vehicle_type_id`, `name`, `form_factor`, `propulsion_type` | Vehicle type metadata. The value is always 1. |
 | `gbfs_station_capacity` | `station_id` | Total parking positions: docking points for a physical station, parkable vehicles for a virtual one. |
 | `gbfs_station_vehicles_available` | `station_id` | Functional vehicles physically at the station. A rider can take one only where `gbfs_station_renting` is 1. |
 | `gbfs_station_vehicles_disabled` | `station_id` | Vehicles that a rider cannot take. |
@@ -203,8 +204,8 @@ label, which holds the URL of the feed.
 | `gbfs_station_installed` | `station_id` | 1 if the station is on the street. |
 | `gbfs_station_renting` | `station_id` | 1 if the station gives out vehicles. |
 | `gbfs_station_returning` | `station_id` | 1 if the station takes back vehicles. |
-| `gbfs_station_vehicles_available_by_type` | `station_id`, `vehicle_type_id`, `form_factor` | Vehicles of one type at the station. Set `per_vehicle_type` to get this metric. |
-| `gbfs_free_vehicles` | `vehicle_type_id`, `form_factor`, `state` | Vehicles in the vehicle feed. The state is `available`, `reserved`, or `disabled`. |
+| `gbfs_station_vehicles_available_by_type` | `station_id`, `vehicle_type_id`, `form_factor`, `propulsion_type` | Vehicles of one type at the station. Set `per_vehicle_type` to get this metric. |
+| `gbfs_free_vehicles` | `vehicle_type_id`, `form_factor`, `propulsion_type`, `state` | Vehicles in the vehicle feed. The state is `available`, `reserved`, or `disabled`. |
 | `gbfs_system_stations` | | Distinct stations across `station_information` and `station_status`. |
 | `gbfs_system_vehicles_available` | | Vehicles at all stations that a rider can take. |
 | `gbfs_system_vehicles_disabled` | | Vehicles at all stations that a rider cannot take. |
@@ -268,6 +269,11 @@ station.
 
 GBFS 3.0 gives a name in several languages. The exporter keeps the English
 name. Without an English name, it keeps the first name of the list.
+
+A system that publishes no `vehicle_types.json` carries non-motorized bicycles
+only, so its vehicles report `form_factor="bicycle"` and
+`propulsion_type="human"`. A system that publishes the feed but did not answer
+reports `unknown` for both, because the exporter must not claim a bicycle.
 
 Many operators list docked vehicles in the vehicle feed. For those operators,
 `gbfs_system_free_vehicles` and `gbfs_system_vehicles_available` count the same
@@ -393,15 +399,18 @@ bottomk(10,
 )
 ```
 
-Bicycles that wait on the street:
+Electric bikes that wait on the street:
 
 ```promql
-sum by (system) (gbfs_free_vehicles{form_factor="bicycle", state="available"})
+sum by (system) (
+  gbfs_free_vehicles{form_factor="bicycle", propulsion_type=~"electric.*", state="available"}
+)
 ```
 
 The `form_factor` of a GBFS vehicle type does not say whether the vehicle is
-electric. A classic bike and an electric bike both report `bicycle`. This query
-therefore counts both.
+electric. A classic bike and an electric bike both report `bicycle`. The drive
+sits in `propulsion_type`, which is `human`, `electric_assist`, `electric`, or
+`combustion`.
 
 A system that the exporter cannot read:
 
