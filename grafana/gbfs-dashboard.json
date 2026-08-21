@@ -50,12 +50,10 @@
               "type": "value",
               "options": {
                 "0": {
-                  "color": "red",
                   "index": 1,
                   "text": "DOWN"
                 },
                 "1": {
-                  "color": "green",
                   "index": 0,
                   "text": "UP"
                 }
@@ -1271,19 +1269,17 @@
           },
           "mappings": [
             {
+              "type": "value",
               "options": {
                 "0": {
-                  "color": "red",
                   "index": 1,
                   "text": "DOWN"
                 },
                 "1": {
-                  "color": "green",
                   "index": 0,
                   "text": "UP"
                 }
-              },
-              "type": "value"
+              }
             }
           ],
           "thresholds": {
@@ -1292,6 +1288,10 @@
               {
                 "color": "red",
                 "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
               }
             ]
           }
