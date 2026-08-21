@@ -106,7 +106,7 @@ gbfs_station_installed{station_id="2",system="demo"} 1
 # TYPE gbfs_station_renting gauge
 gbfs_station_renting{station_id="1",system="demo"} 1
 gbfs_station_renting{station_id="2",system="demo"} 0
-# HELP gbfs_station_vehicles_available Number of vehicles at the station that a rider can take.
+# HELP gbfs_station_vehicles_available Number of functional vehicles physically at the station. A rider can take one only where gbfs_station_renting is 1.
 # TYPE gbfs_station_vehicles_available gauge
 gbfs_station_vehicles_available{station_id="1",system="demo"} 3
 gbfs_station_vehicles_available{station_id="2",system="demo"} 5
@@ -118,28 +118,28 @@ gbfs_station_vehicles_available_by_type{form_factor="bicycle",station_id="1",sys
 # TYPE gbfs_station_info gauge
 gbfs_station_info{lat="48.8",lon="2.3",name="Gare",station_id="1",system="demo"} 1
 gbfs_station_info{lat="48.9",lon="2.4",name="Place",station_id="2",system="demo"} 1
-# HELP gbfs_station_capacity Number of docks that the station has.
+# HELP gbfs_station_capacity Total parking positions of the station: docking points for a physical station, parkable vehicles for a virtual one.
 # TYPE gbfs_station_capacity gauge
 gbfs_station_capacity{station_id="1",system="demo"} 20
 # HELP gbfs_system_free_vehicles Number of vehicles in the vehicle feed.
 # TYPE gbfs_system_free_vehicles gauge
 gbfs_system_free_vehicles{system="demo"} 3
-# HELP gbfs_system_stations Number of stations in the station feed.
+# HELP gbfs_system_stations Number of distinct stations across station_information and station_status.
 # TYPE gbfs_system_stations gauge
 gbfs_system_stations{system="demo"} 2
-# HELP gbfs_system_vehicles_available Number of vehicles at all stations that a rider can take.
+# HELP gbfs_system_vehicles_available Sum of gbfs_station_vehicles_available over every station. Never add it to that metric.
 # TYPE gbfs_system_vehicles_available gauge
 gbfs_system_vehicles_available{system="demo"} 8
-# HELP gbfs_system_vehicles_disabled Number of vehicles at all stations that a rider cannot take.
+# HELP gbfs_system_vehicles_disabled Sum of gbfs_station_vehicles_disabled over every station. Never add it to that metric.
 # TYPE gbfs_system_vehicles_disabled gauge
 gbfs_system_vehicles_disabled{system="demo"} 1
-# HELP gbfs_system_docks_available Number of docks at all stations that accept a vehicle.
+# HELP gbfs_system_docks_available Sum of gbfs_station_docks_available over every station. Never add it to that metric.
 # TYPE gbfs_system_docks_available gauge
 gbfs_system_docks_available{system="demo"} 16
 # HELP gbfs_system_info System metadata. The value is always 1.
 # TYPE gbfs_system_info gauge
 gbfs_system_info{name="Demo Bikes",system="demo",system_id="demo",timezone="Europe/Paris",version="2.3"} 1
-# HELP gbfs_up 1 if the exporter read every feed of the system, 0 if one feed failed.
+# HELP gbfs_up 1 if the exporter read every feed that the system publishes, 0 if any feed or the discovery document failed.
 # TYPE gbfs_up gauge
 # HELP gbfs_station_docks_available Number of docks at the station that accept a vehicle.
 # TYPE gbfs_station_docks_available gauge
@@ -164,7 +164,7 @@ func TestCollectVersion3(t *testing.T) {
 	subject := newCollector(t, server.URL+"/gbfs.json", false)
 
 	expected := `
-# HELP gbfs_station_vehicles_available Number of vehicles at the station that a rider can take.
+# HELP gbfs_station_vehicles_available Number of functional vehicles physically at the station. A rider can take one only where gbfs_station_renting is 1.
 # TYPE gbfs_station_vehicles_available gauge
 gbfs_station_vehicles_available{station_id="1",system="demo"} 3
 # HELP gbfs_station_info Station metadata. The value is always 1.
@@ -194,7 +194,7 @@ func TestCollectReportsDownSystem(t *testing.T) {
 	subject := newCollector(t, server.URL+"/gbfs.json", false)
 
 	expected := `
-# HELP gbfs_up 1 if the exporter read every feed of the system, 0 if one feed failed.
+# HELP gbfs_up 1 if the exporter read every feed that the system publishes, 0 if any feed or the discovery document failed.
 # TYPE gbfs_up gauge
 gbfs_up{system="demo"} 0
 `
@@ -218,14 +218,14 @@ func TestCollectKeepsFeedsThatAnswered(t *testing.T) {
 	subject := newCollector(t, server.URL+"/gbfs.json", false)
 
 	expected := `
-# HELP gbfs_up 1 if the exporter read every feed of the system, 0 if one feed failed.
+# HELP gbfs_up 1 if the exporter read every feed that the system publishes, 0 if any feed or the discovery document failed.
 # TYPE gbfs_up gauge
 gbfs_up{system="demo"} 0
-# HELP gbfs_station_vehicles_available Number of vehicles at the station that a rider can take.
+# HELP gbfs_station_vehicles_available Number of functional vehicles physically at the station. A rider can take one only where gbfs_station_renting is 1.
 # TYPE gbfs_station_vehicles_available gauge
 gbfs_station_vehicles_available{station_id="1",system="demo"} 3
 gbfs_station_vehicles_available{station_id="2",system="demo"} 5
-# HELP gbfs_system_stations Number of stations in the station feed.
+# HELP gbfs_system_stations Number of distinct stations across station_information and station_status.
 # TYPE gbfs_system_stations gauge
 gbfs_system_stations{system="demo"} 2
 `
@@ -248,7 +248,7 @@ func TestCollectWithoutStatusFeed(t *testing.T) {
 	subject := newCollector(t, server.URL+"/gbfs.json", false)
 
 	expected := `
-# HELP gbfs_system_stations Number of stations in the station feed.
+# HELP gbfs_system_stations Number of distinct stations across station_information and station_status.
 # TYPE gbfs_system_stations gauge
 gbfs_system_stations{system="demo"} 2
 `
@@ -294,7 +294,7 @@ func TestCollectStopsWithTheRequestContext(t *testing.T) {
 	bound := subject.WithContext(ctx)
 
 	expected := `
-# HELP gbfs_up 1 if the exporter read every feed of the system, 0 if one feed failed.
+# HELP gbfs_up 1 if the exporter read every feed that the system publishes, 0 if any feed or the discovery document failed.
 # TYPE gbfs_up gauge
 gbfs_up{system="demo"} 0
 `

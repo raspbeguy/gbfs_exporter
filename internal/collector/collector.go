@@ -34,7 +34,7 @@ const namespace = "gbfs"
 var (
 	upDesc = prometheus.NewDesc(
 		namespace+"_up",
-		"1 if the exporter read every feed of the system, 0 if one feed failed.",
+		"1 if the exporter read every feed that the system publishes, 0 if any feed or the discovery document failed.",
 		[]string{"system"}, nil)
 
 	systemInfoDesc = prometheus.NewDesc(
@@ -49,12 +49,12 @@ var (
 
 	stationCapacityDesc = prometheus.NewDesc(
 		namespace+"_station_capacity",
-		"Number of docks that the station has.",
+		"Total parking positions of the station: docking points for a physical station, parkable vehicles for a virtual one.",
 		[]string{"system", "station_id"}, nil)
 
 	stationVehiclesAvailableDesc = prometheus.NewDesc(
 		namespace+"_station_vehicles_available",
-		"Number of vehicles at the station that a rider can take.",
+		"Number of functional vehicles physically at the station. A rider can take one only where gbfs_station_renting is 1.",
 		[]string{"system", "station_id"}, nil)
 
 	stationVehiclesDisabledDesc = prometheus.NewDesc(
@@ -99,22 +99,22 @@ var (
 
 	systemStationsDesc = prometheus.NewDesc(
 		namespace+"_system_stations",
-		"Number of stations in the station feed.",
+		"Number of distinct stations across station_information and station_status.",
 		[]string{"system"}, nil)
 
 	systemVehiclesAvailableDesc = prometheus.NewDesc(
 		namespace+"_system_vehicles_available",
-		"Number of vehicles at all stations that a rider can take.",
+		"Sum of gbfs_station_vehicles_available over every station. Never add it to that metric.",
 		[]string{"system"}, nil)
 
 	systemVehiclesDisabledDesc = prometheus.NewDesc(
 		namespace+"_system_vehicles_disabled",
-		"Number of vehicles at all stations that a rider cannot take.",
+		"Sum of gbfs_station_vehicles_disabled over every station. Never add it to that metric.",
 		[]string{"system"}, nil)
 
 	systemDocksAvailableDesc = prometheus.NewDesc(
 		namespace+"_system_docks_available",
-		"Number of docks at all stations that accept a vehicle.",
+		"Sum of gbfs_station_docks_available over every station. Never add it to that metric.",
 		[]string{"system"}, nil)
 
 	systemFreeVehiclesDesc = prometheus.NewDesc(

@@ -188,11 +188,11 @@ label, which holds the URL of the feed.
 
 | Metric | Extra labels | Meaning |
 | --- | --- | --- |
-| `gbfs_up` | | 1 if the exporter read every feed, 0 if one feed failed. |
+| `gbfs_up` | | 1 if the exporter read every feed that the system publishes, 0 if any feed or the discovery file failed. |
 | `gbfs_system_info` | `system_id`, `name`, `version`, `timezone` | System metadata. The value is always 1. |
 | `gbfs_station_info` | `station_id`, `name`, `lat`, `lon` | Station metadata. The value is always 1. |
-| `gbfs_station_capacity` | `station_id` | Number of docks that the station has. |
-| `gbfs_station_vehicles_available` | `station_id` | Vehicles that a rider can take. |
+| `gbfs_station_capacity` | `station_id` | Total parking positions: docking points for a physical station, parkable vehicles for a virtual one. |
+| `gbfs_station_vehicles_available` | `station_id` | Functional vehicles physically at the station. A rider can take one only where `gbfs_station_renting` is 1. |
 | `gbfs_station_vehicles_disabled` | `station_id` | Vehicles that a rider cannot take. |
 | `gbfs_station_docks_available` | `station_id` | Docks that accept a vehicle. |
 | `gbfs_station_docks_disabled` | `station_id` | Docks that do not accept a vehicle. |
@@ -201,7 +201,7 @@ label, which holds the URL of the feed.
 | `gbfs_station_returning` | `station_id` | 1 if the station takes back vehicles. |
 | `gbfs_station_vehicles_available_by_type` | `station_id`, `vehicle_type_id`, `form_factor` | Vehicles of one type at the station. Set `per_vehicle_type` to get this metric. |
 | `gbfs_free_vehicles` | `vehicle_type_id`, `form_factor`, `state` | Vehicles in the vehicle feed. The state is `available`, `reserved`, or `disabled`. |
-| `gbfs_system_stations` | | Number of stations in the station feed. |
+| `gbfs_system_stations` | | Distinct stations across `station_information` and `station_status`. |
 | `gbfs_system_vehicles_available` | | Vehicles at all stations that a rider can take. |
 | `gbfs_system_vehicles_disabled` | | Vehicles at all stations that a rider cannot take. |
 | `gbfs_system_docks_available` | | Docks at all stations that accept a vehicle. |
@@ -217,6 +217,9 @@ A feed that fails does not remove the feeds that answered. The exporter sets
 `gbfs_up` to 0 and publishes the data that it did read. Alert on `gbfs_up`, and
 not on a metric that disappears.
 
+A failure of the auto-discovery file also sets `gbfs_up` to 0. In that case the
+exporter read no feed at all, so it publishes no other metric.
+
 The exporter writes a metric only for a field that the feed holds. A system
 without docks gets no `gbfs_station_docks_available`. A feed that omits
 `is_renting` gets no `gbfs_station_renting`, because a 0 reads as a closed
@@ -225,9 +228,11 @@ station.
 GBFS 3.0 gives a name in several languages. The exporter keeps the English
 name. Without an English name, it keeps the first name of the list.
 
-Some operators list docked vehicles in the vehicle feed. For those operators,
+Many operators list docked vehicles in the vehicle feed. For those operators,
 `gbfs_system_free_vehicles` and `gbfs_system_vehicles_available` count the same
-vehicle twice. Check the feed of your operator before you add the two metrics.
+vehicle twice. Strasbourg Vel'hop is one example: all 226 of its bikes sit at a
+station, and both metrics report 226. Check the feed of your operator before
+you add the two metrics.
 
 ## Prometheus configuration
 
@@ -347,11 +352,15 @@ bottomk(10,
 )
 ```
 
-Electric bikes that wait on the street:
+Bicycles that wait on the street:
 
 ```promql
 sum by (system) (gbfs_free_vehicles{form_factor="bicycle", state="available"})
 ```
+
+The `form_factor` of a GBFS vehicle type does not say whether the vehicle is
+electric. A classic bike and an electric bike both report `bicycle`. This query
+therefore counts both.
 
 A system that the exporter cannot read:
 
