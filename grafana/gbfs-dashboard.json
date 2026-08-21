@@ -734,14 +734,14 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "sum by (system, state) (gbfs_free_vehicles{system=~\"$system\"})",
+          "expr": "sum by (system, state, docked) (gbfs_vehicles{system=~\"$system\"})",
           "instant": false,
           "range": true,
           "refId": "A",
           "legendFormat": "{{system}} {{state}}"
         }
       ],
-      "title": "Free-floating vehicles by state",
+      "title": "Vehicles in the vehicle feed",
       "type": "timeseries"
     },
     {

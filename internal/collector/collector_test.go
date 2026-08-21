@@ -35,10 +35,13 @@ var version2Feeds = map[string]string{
 		 "vehicle_types_available":[{"vehicle_type_id":"bike","count":2},{"vehicle_type_id":"ebike","count":1}]},
 		{"station_id":"2","num_bikes_available":5,"num_docks_available":0,
 		 "is_installed":1,"is_renting":0,"is_returning":1}]}}`,
+	// Bike "d" sits at station 1. Many operators list every docked vehicle in
+	// this feed, so the exporter must not call it free floating.
 	"/free_bike_status.json": `{"data":{"bikes":[
 		{"bike_id":"a","vehicle_type_id":"ebike","is_reserved":false,"is_disabled":false},
 		{"bike_id":"b","vehicle_type_id":"ebike","is_reserved":true,"is_disabled":false},
-		{"bike_id":"c","vehicle_type_id":"bike","is_reserved":false,"is_disabled":true}]}}`,
+		{"bike_id":"c","vehicle_type_id":"bike","is_reserved":false,"is_disabled":true},
+		{"bike_id":"d","vehicle_type_id":"bike","station_id":"1","is_reserved":false,"is_disabled":false}]}}`,
 	"/vehicle_types.json": `{"data":{"vehicle_types":[
 		{"vehicle_type_id":"bike","form_factor":"bicycle","propulsion_type":"human"},
 		{"vehicle_type_id":"ebike","form_factor":"bicycle","propulsion_type":"electric_assist"}]}}`,
@@ -93,11 +96,12 @@ func TestCollectVersion2(t *testing.T) {
 	subject := newCollector(t, server.URL+"/gbfs.json", true)
 
 	expected := `
-# HELP gbfs_free_vehicles Number of vehicles in the vehicle feed, grouped by type and state.
-# TYPE gbfs_free_vehicles gauge
-gbfs_free_vehicles{form_factor="bicycle",propulsion_type="electric_assist",state="available",system="demo",vehicle_type_id="ebike"} 1
-gbfs_free_vehicles{form_factor="bicycle",propulsion_type="electric_assist",state="reserved",system="demo",vehicle_type_id="ebike"} 1
-gbfs_free_vehicles{form_factor="bicycle",propulsion_type="human",state="disabled",system="demo",vehicle_type_id="bike"} 1
+# HELP gbfs_vehicles Number of vehicles in the vehicle feed, docked or not. docked is true when the feed gave the vehicle a station_id.
+# TYPE gbfs_vehicles gauge
+gbfs_vehicles{docked="false",form_factor="bicycle",propulsion_type="electric_assist",state="available",system="demo",vehicle_type_id="ebike"} 1
+gbfs_vehicles{docked="false",form_factor="bicycle",propulsion_type="electric_assist",state="reserved",system="demo",vehicle_type_id="ebike"} 1
+gbfs_vehicles{docked="false",form_factor="bicycle",propulsion_type="human",state="disabled",system="demo",vehicle_type_id="bike"} 1
+gbfs_vehicles{docked="true",form_factor="bicycle",propulsion_type="human",state="available",system="demo",vehicle_type_id="bike"} 1
 # HELP gbfs_station_installed 1 if the station is on the street, 0 if it is not.
 # TYPE gbfs_station_installed gauge
 gbfs_station_installed{station_id="1",system="demo"} 1
@@ -121,9 +125,6 @@ gbfs_station_info{lat="48.9",lon="2.4",name="Place",station_id="2",system="demo"
 # HELP gbfs_station_capacity Total parking positions of the station: docking points for a physical station, parkable vehicles for a virtual one.
 # TYPE gbfs_station_capacity gauge
 gbfs_station_capacity{station_id="1",system="demo"} 20
-# HELP gbfs_system_free_vehicles Number of vehicles in the vehicle feed.
-# TYPE gbfs_system_free_vehicles gauge
-gbfs_system_free_vehicles{system="demo"} 3
 # HELP gbfs_system_stations Number of distinct stations across station_information and station_status.
 # TYPE gbfs_system_stations gauge
 gbfs_system_stations{system="demo"} 2
@@ -155,12 +156,12 @@ gbfs_station_vehicles_disabled{station_id="1",system="demo"} 1
 gbfs_up{system="demo"} 1
 `
 	names := []string{
-		"gbfs_free_vehicles", "gbfs_station_capacity",
+		"gbfs_vehicles", "gbfs_station_capacity",
 		"gbfs_station_docks_available", "gbfs_station_info",
 		"gbfs_station_installed", "gbfs_station_renting",
 		"gbfs_station_returning", "gbfs_station_vehicles_available",
 		"gbfs_station_vehicles_available_by_type", "gbfs_station_vehicles_disabled",
-		"gbfs_system_docks_available", "gbfs_system_free_vehicles",
+		"gbfs_system_docks_available",
 		"gbfs_system_info", "gbfs_system_stations",
 		"gbfs_system_vehicles_available", "gbfs_system_vehicles_disabled",
 		"gbfs_up",
@@ -184,13 +185,13 @@ gbfs_station_info{lat="48.8",lon="2.3",name="Gare",station_id="1",system="demo"}
 # HELP gbfs_system_info System metadata. The value is always 1.
 # TYPE gbfs_system_info gauge
 gbfs_system_info{name="Demo Bikes",system="demo",system_id="demo",timezone="Europe/Paris",version="3.0"} 1
-# HELP gbfs_free_vehicles Number of vehicles in the vehicle feed, grouped by type and state.
-# TYPE gbfs_free_vehicles gauge
-gbfs_free_vehicles{form_factor="bicycle",propulsion_type="electric_assist",state="available",system="demo",vehicle_type_id="ebike"} 1
+# HELP gbfs_vehicles Number of vehicles in the vehicle feed, docked or not. docked is true when the feed gave the vehicle a station_id.
+# TYPE gbfs_vehicles gauge
+gbfs_vehicles{docked="false",form_factor="bicycle",propulsion_type="electric_assist",state="available",system="demo",vehicle_type_id="ebike"} 1
 `
 	names := []string{
 		"gbfs_station_vehicles_available", "gbfs_station_info",
-		"gbfs_system_info", "gbfs_free_vehicles",
+		"gbfs_system_info", "gbfs_vehicles",
 	}
 	if err := testutil.CollectAndCompare(subject, strings.NewReader(expected), names...); err != nil {
 		t.Error(err)
@@ -436,13 +437,14 @@ func TestVehicleTypeFallbacks(t *testing.T) {
 		subject := newCollector(t, server.URL+"/gbfs.json", false)
 
 		expected := `
-# HELP gbfs_free_vehicles Number of vehicles in the vehicle feed, grouped by type and state.
-# TYPE gbfs_free_vehicles gauge
-gbfs_free_vehicles{form_factor="bicycle",propulsion_type="human",state="available",system="demo",vehicle_type_id="ebike"} 1
-gbfs_free_vehicles{form_factor="bicycle",propulsion_type="human",state="reserved",system="demo",vehicle_type_id="ebike"} 1
-gbfs_free_vehicles{form_factor="bicycle",propulsion_type="human",state="disabled",system="demo",vehicle_type_id="bike"} 1
+# HELP gbfs_vehicles Number of vehicles in the vehicle feed, docked or not. docked is true when the feed gave the vehicle a station_id.
+# TYPE gbfs_vehicles gauge
+gbfs_vehicles{docked="false",form_factor="bicycle",propulsion_type="human",state="available",system="demo",vehicle_type_id="ebike"} 1
+gbfs_vehicles{docked="false",form_factor="bicycle",propulsion_type="human",state="reserved",system="demo",vehicle_type_id="ebike"} 1
+gbfs_vehicles{docked="false",form_factor="bicycle",propulsion_type="human",state="disabled",system="demo",vehicle_type_id="bike"} 1
+gbfs_vehicles{docked="true",form_factor="bicycle",propulsion_type="human",state="available",system="demo",vehicle_type_id="bike"} 1
 `
-		if err := testutil.CollectAndCompare(subject, strings.NewReader(expected), "gbfs_free_vehicles"); err != nil {
+		if err := testutil.CollectAndCompare(subject, strings.NewReader(expected), "gbfs_vehicles"); err != nil {
 			t.Error(err)
 		}
 	})
@@ -459,14 +461,37 @@ gbfs_free_vehicles{form_factor="bicycle",propulsion_type="human",state="disabled
 		subject := newCollector(t, server.URL+"/gbfs.json", false)
 
 		expected := `
-# HELP gbfs_free_vehicles Number of vehicles in the vehicle feed, grouped by type and state.
-# TYPE gbfs_free_vehicles gauge
-gbfs_free_vehicles{form_factor="unknown",propulsion_type="unknown",state="available",system="demo",vehicle_type_id="ebike"} 1
-gbfs_free_vehicles{form_factor="unknown",propulsion_type="unknown",state="reserved",system="demo",vehicle_type_id="ebike"} 1
-gbfs_free_vehicles{form_factor="unknown",propulsion_type="unknown",state="disabled",system="demo",vehicle_type_id="bike"} 1
+# HELP gbfs_vehicles Number of vehicles in the vehicle feed, docked or not. docked is true when the feed gave the vehicle a station_id.
+# TYPE gbfs_vehicles gauge
+gbfs_vehicles{docked="false",form_factor="unknown",propulsion_type="unknown",state="available",system="demo",vehicle_type_id="ebike"} 1
+gbfs_vehicles{docked="false",form_factor="unknown",propulsion_type="unknown",state="reserved",system="demo",vehicle_type_id="ebike"} 1
+gbfs_vehicles{docked="false",form_factor="unknown",propulsion_type="unknown",state="disabled",system="demo",vehicle_type_id="bike"} 1
+gbfs_vehicles{docked="true",form_factor="unknown",propulsion_type="unknown",state="available",system="demo",vehicle_type_id="bike"} 1
 `
-		if err := testutil.CollectAndCompare(subject, strings.NewReader(expected), "gbfs_free_vehicles"); err != nil {
+		if err := testutil.CollectAndCompare(subject, strings.NewReader(expected), "gbfs_vehicles"); err != nil {
 			t.Error(err)
 		}
 	})
+}
+
+// TestCollectSplitsDockedVehicles checks the docked label.
+//
+// Many operators list every docked vehicle in the vehicle feed. Without the
+// label, those vehicles counted as free floating and were counted a second
+// time by the station metrics.
+func TestCollectSplitsDockedVehicles(t *testing.T) {
+	server := fakeSystem(t, version2Feeds)
+	subject := newCollector(t, server.URL+"/gbfs.json", false)
+
+	expected := `
+# HELP gbfs_vehicles Number of vehicles in the vehicle feed, docked or not. docked is true when the feed gave the vehicle a station_id.
+# TYPE gbfs_vehicles gauge
+gbfs_vehicles{docked="false",form_factor="bicycle",propulsion_type="electric_assist",state="available",system="demo",vehicle_type_id="ebike"} 1
+gbfs_vehicles{docked="false",form_factor="bicycle",propulsion_type="electric_assist",state="reserved",system="demo",vehicle_type_id="ebike"} 1
+gbfs_vehicles{docked="false",form_factor="bicycle",propulsion_type="human",state="disabled",system="demo",vehicle_type_id="bike"} 1
+gbfs_vehicles{docked="true",form_factor="bicycle",propulsion_type="human",state="available",system="demo",vehicle_type_id="bike"} 1
+`
+	if err := testutil.CollectAndCompare(subject, strings.NewReader(expected), "gbfs_vehicles"); err != nil {
+		t.Error(err)
+	}
 }

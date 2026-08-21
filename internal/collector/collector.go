@@ -117,10 +117,10 @@ var (
 		"Number of vehicles of one type at the station that a rider can take.",
 		[]string{"system", "station_id", "vehicle_type_id", "form_factor", "propulsion_type"}, nil)
 
-	freeVehiclesDesc = prometheus.NewDesc(
-		namespace+"_free_vehicles",
-		"Number of vehicles in the vehicle feed, grouped by type and state.",
-		[]string{"system", "vehicle_type_id", "form_factor", "propulsion_type", "state"}, nil)
+	vehiclesDesc = prometheus.NewDesc(
+		namespace+"_vehicles",
+		"Number of vehicles in the vehicle feed, docked or not. docked is true when the feed gave the vehicle a station_id.",
+		[]string{"system", "vehicle_type_id", "form_factor", "propulsion_type", "state", "docked"}, nil)
 
 	systemStationsDesc = prometheus.NewDesc(
 		namespace+"_system_stations",
@@ -142,20 +142,15 @@ var (
 		"Sum of gbfs_station_docks_available over every station. Never add it to that metric.",
 		[]string{"system"}, nil)
 
-	systemFreeVehiclesDesc = prometheus.NewDesc(
-		namespace+"_system_free_vehicles",
-		"Number of vehicles in the vehicle feed.",
-		[]string{"system"}, nil)
-
 	allDescs = []*prometheus.Desc{
 		upDesc, feedUpDesc, feedLastUpdatedDesc, feedTTLDesc, feedDurationDesc,
 		systemInfoDesc, vehicleTypeInfoDesc, stationInfoDesc, stationCapacityDesc,
 		stationVehiclesAvailableDesc, stationVehiclesDisabledDesc,
 		stationDocksAvailableDesc, stationDocksDisabledDesc,
 		stationInstalledDesc, stationRentingDesc, stationReturningDesc,
-		stationTypeDesc, freeVehiclesDesc, systemStationsDesc,
+		stationTypeDesc, vehiclesDesc, systemStationsDesc,
 		systemVehiclesAvailableDesc, systemVehiclesDisabledDesc,
-		systemDocksAvailableDesc, systemFreeVehiclesDesc,
+		systemDocksAvailableDesc,
 	}
 )
 
@@ -352,6 +347,7 @@ type vehicleKey struct {
 	formFactor string
 	propulsion string
 	state      string
+	docked     string
 }
 
 func (c *Collector) collectVehicles(ch chan<- prometheus.Metric, system System, snapshot *gbfs.Snapshot) {
@@ -366,13 +362,28 @@ func (c *Collector) collectVehicles(ch chan<- prometheus.Metric, system System, 
 			formFactor: form,
 			propulsion: propulsion,
 			state:      vehicleState(vehicle),
+			docked:     docked(vehicle),
 		}
 		counts[key]++
 	}
 	for key, count := range counts {
-		gauge(ch, freeVehiclesDesc, count, system.Name, key.typeID, key.formFactor, key.propulsion, key.state)
+		gauge(ch, vehiclesDesc, count, system.Name, key.typeID, key.formFactor,
+			key.propulsion, key.state, key.docked)
 	}
-	gauge(ch, systemFreeVehiclesDesc, float64(len(snapshot.Vehicles)), system.Name)
+}
+
+// docked reports whether the feed placed the vehicle at a station.
+//
+// Many operators list every docked vehicle in the vehicle feed. Strasbourg
+// Vel'hop is one: each of its bikes carries a station_id, and none is free
+// floating. A value of false is weaker than "free floating", because GBFS
+// requires station_id only when the system also publishes vehicle_types.json,
+// and the field did not exist before GBFS 2.1.
+func docked(vehicle gbfs.Vehicle) string {
+	if vehicle.StationID != "" {
+		return "true"
+	}
+	return "false"
 }
 
 // vehicleState reports one state per vehicle. A vehicle that is both disabled

@@ -205,12 +205,11 @@ label, which holds the URL of the feed.
 | `gbfs_station_renting` | `station_id` | 1 if the station gives out vehicles. |
 | `gbfs_station_returning` | `station_id` | 1 if the station takes back vehicles. |
 | `gbfs_station_vehicles_available_by_type` | `station_id`, `vehicle_type_id`, `form_factor`, `propulsion_type` | Vehicles of one type at the station. Set `per_vehicle_type` to get this metric. |
-| `gbfs_free_vehicles` | `vehicle_type_id`, `form_factor`, `propulsion_type`, `state` | Vehicles in the vehicle feed. The state is `available`, `reserved`, or `disabled`. |
+| `gbfs_vehicles` | `vehicle_type_id`, `form_factor`, `propulsion_type`, `state`, `docked` | Vehicles in the vehicle feed, docked or not. The state is `available`, `reserved`, or `disabled`. |
 | `gbfs_system_stations` | | Distinct stations across `station_information` and `station_status`. |
 | `gbfs_system_vehicles_available` | | Vehicles at all stations that a rider can take. |
 | `gbfs_system_vehicles_disabled` | | Vehicles at all stations that a rider cannot take. |
 | `gbfs_system_docks_available` | | Docks at all stations that accept a vehicle. |
-| `gbfs_system_free_vehicles` | | Number of vehicles in the vehicle feed. |
 
 The station name and the position stay in `gbfs_station_info`. The other
 station metrics carry only the station identifier. This keeps the number of
@@ -275,11 +274,25 @@ only, so its vehicles report `form_factor="bicycle"` and
 `propulsion_type="human"`. A system that publishes the feed but did not answer
 reports `unknown` for both, because the exporter must not claim a bicycle.
 
-Many operators list docked vehicles in the vehicle feed. For those operators,
-`gbfs_system_free_vehicles` and `gbfs_system_vehicles_available` count the same
-vehicle twice. Strasbourg Vel'hop is one example: all 226 of its bikes sit at a
-station, and both metrics report 226. Check the feed of your operator before
-you add the two metrics.
+### Docked vehicles
+
+Many operators list every docked vehicle in the vehicle feed. Strasbourg
+Vel'hop is one: each of its bikes carries a `station_id`, and none is free
+floating. The `docked` label separates them:
+
+```promql
+sum by (system) (gbfs_vehicles{docked="false"})
+```
+
+Read `docked` as "the feed gave the vehicle a `station_id`", and not as "the
+vehicle is at a station". GBFS requires the field only when the system also
+publishes `vehicle_types.json`, and the field did not exist before GBFS 2.1.
+
+`gbfs_vehicles{docked="true"}` still overlaps the station metrics, because the
+same bike appears in both feeds. The two do not match exactly, because a
+docked disabled vehicle counts under `gbfs_vehicles{state="disabled"}` but
+under `num_bikes_disabled` at the station, not under the available count. Do
+not add `gbfs_vehicles` to `gbfs_station_vehicles_available`.
 
 ## Prometheus configuration
 
@@ -383,6 +396,12 @@ Stations that hold no vehicle:
 count by (system) (gbfs_station_vehicles_available == 0)
 ```
 
+Vehicles in the vehicle feed:
+
+```promql
+sum by (system) (gbfs_vehicles)
+```
+
 Fill rate of each system:
 
 ```promql
@@ -403,7 +422,7 @@ Electric bikes that wait on the street:
 
 ```promql
 sum by (system) (
-  gbfs_free_vehicles{form_factor="bicycle", propulsion_type=~"electric.*", state="available"}
+  gbfs_vehicles{form_factor="bicycle", propulsion_type=~"electric.*", state="available"}
 )
 ```
 
