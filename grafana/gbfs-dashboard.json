@@ -1044,7 +1044,7 @@
         "type": "prometheus",
         "uid": "${datasource}"
       },
-      "description": "The twenty stations that hold the fewest vehicles.",
+      "description": "Every station of the selected system. Click a column header to sort. Free docks counts the docks that accept a vehicle.",
       "fieldConfig": {
         "defaults": {
           "custom": {
@@ -1078,10 +1078,6 @@
                   "mode": "gradient",
                   "type": "gauge"
                 }
-              },
-              {
-                "id": "max",
-                "value": 20
               },
               {
                 "id": "min",
@@ -1132,9 +1128,10 @@
         "sortBy": [
           {
             "desc": false,
-            "displayName": "Vehicles"
+            "displayName": "Station"
           }
-        ]
+        ],
+        "enablePagination": true
       },
       "targets": [
         {
@@ -1143,37 +1140,57 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "bottomk(20, gbfs_station_vehicles_available{system=~\"$system\"}\n  * on (system, station_id) group_left (station_name, lat, lon) gbfs_station_info{system=~\"$system\"})",
+          "expr": "sum by (station_id, station_name) (\n  gbfs_station_vehicles_available{system=~\"$system\"}\n    * on (system, station_id) group_left (station_name)\n      gbfs_station_info{system=~\"$system\"}\n)",
+          "format": "table",
           "instant": true,
           "range": false,
-          "refId": "A",
-          "format": "table"
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "sum by (station_id) (gbfs_station_docks_available{system=~\"$system\"})",
+          "format": "table",
+          "instant": true,
+          "range": false,
+          "refId": "B"
         }
       ],
-      "title": "Emptiest stations",
+      "title": "All stations",
       "transformations": [
+        {
+          "id": "joinByField",
+          "options": {
+            "byField": "station_id",
+            "mode": "outer"
+          }
+        },
+        {
+          "id": "filterFieldsByName",
+          "options": {
+            "include": {
+              "pattern": "^(station_name|station_id|Value #A|Value #B)$"
+            }
+          }
+        },
         {
           "id": "organize",
           "options": {
-            "excludeByName": {
-              "Time": true,
-              "__name__": true,
-              "instance": true,
-              "job": true,
-              "lat": true,
-              "lon": true
-            },
+            "excludeByName": {},
             "indexByName": {
-              "system": 0,
-              "name": 1,
-              "station_id": 2,
-              "Value": 3
+              "station_name": 0,
+              "station_id": 1,
+              "Value #A": 2,
+              "Value #B": 3
             },
             "renameByName": {
-              "Value": "Vehicles",
-              "name": "Station",
-              "system": "System",
-              "station_id": "Station ID"
+              "station_name": "Station",
+              "station_id": "Station ID",
+              "Value #A": "Vehicles",
+              "Value #B": "Free docks"
             }
           }
         }
