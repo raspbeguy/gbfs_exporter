@@ -426,6 +426,23 @@ The dashboard holds four rows:
 The map and the table join `gbfs_station_info` to get the station name and the
 position. The dashboard needs Grafana 10 or higher for the map panel.
 
+### The map opens too far out
+
+The station map asks Grafana to fit the view to the stations. Grafana 12.4.4
+sets the centre correctly and then loses the zoom, so the map opens far too far
+out. Scroll to zoom in.
+
+The cause sits in `GeomapPanel.initViewExtent`, which runs
+`view.setResolution` after `view.fit` and computes the resolution from
+`this.map?.getSize()`. Reading the value back with the map debug control shows
+a correct centre next to a zoom near 1.
+
+Do not try to repair this by adding a `zoom` to the map view. Grafana reads
+that key as the upper bound of the fit, through
+`const maxZoom = config.zoom ?? config.maxZoom`, so a `zoom` of 1 pins the map
+to the whole world. Grafana writes that key itself when it saves a dashboard
+from the user interface.
+
 ## Example queries
 
 Stations that hold no vehicle:
