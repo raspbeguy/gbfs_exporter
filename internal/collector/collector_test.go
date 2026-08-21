@@ -495,3 +495,40 @@ gbfs_vehicles{docked="true",form_factor="bicycle",propulsion_type="human",state=
 		t.Error(err)
 	}
 }
+
+// TestSystemTotalsAbsentForAnUnreportedField checks that a total appears only
+// when at least one station reported the field it sums.
+//
+// GBFS lets an operator omit the disabled counters on purpose. Strasbourg
+// Vel'hop omits them at all 40 stations, and the exporter used to answer 0,
+// which reads as "no broken bikes" instead of "not published".
+func TestSystemTotalsAbsentForAnUnreportedField(t *testing.T) {
+	files := map[string]string{}
+	for path, body := range version2Feeds {
+		files[path] = body
+	}
+	// No station reports a disabled count or a dock count.
+	files["/station_status.json"] = `{"data":{"stations":[
+		{"station_id":"1","num_bikes_available":3},
+		{"station_id":"2","num_bikes_available":5}]}}`
+	server := fakeSystem(t, files)
+	subject := newCollector(t, server.URL+"/gbfs.json", false)
+
+	expected := `
+# HELP gbfs_system_vehicles_available Sum of gbfs_station_vehicles_available over every station. Never add it to that metric.
+# TYPE gbfs_system_vehicles_available gauge
+gbfs_system_vehicles_available{system="demo"} 8
+`
+	names := []string{
+		"gbfs_system_vehicles_available", "gbfs_system_vehicles_disabled",
+		"gbfs_system_docks_available",
+	}
+	if err := testutil.CollectAndCompare(subject, strings.NewReader(expected), names...); err != nil {
+		t.Error(err)
+	}
+	for _, absent := range []string{"gbfs_system_vehicles_disabled", "gbfs_system_docks_available"} {
+		if got := testutil.CollectAndCount(subject, absent); got != 0 {
+			t.Errorf("%s has %d series, want none", absent, got)
+		}
+	}
+}

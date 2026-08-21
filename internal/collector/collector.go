@@ -276,11 +276,17 @@ func (c *Collector) collectStations(ch chan<- prometheus.Metric, system System, 
 		}
 	}
 
+	// Each total needs its own presence flag. A station entry does not mean
+	// that the station reported every field, and GBFS lets an operator omit
+	// the disabled counters on purpose. A shared flag published a 0 that no
+	// feed ever stated.
 	var (
 		totalAvailable float64
 		totalDisabled  float64
 		totalDocks     float64
-		stationCount   float64
+		sawAvailable   bool
+		sawDisabled    bool
+		sawDocks       bool
 	)
 	reported := make(map[string]bool, len(snapshot.Status))
 	for _, status := range snapshot.Status {
@@ -288,20 +294,22 @@ func (c *Collector) collectStations(ch chan<- prometheus.Metric, system System, 
 			continue
 		}
 		reported[status.StationID] = true
-		stationCount++
 
 		if value, ok := status.VehiclesAvailable(); ok {
 			gauge(ch, stationVehiclesAvailableDesc, value, system.Name, status.StationID)
 			totalAvailable += value
+			sawAvailable = true
 		}
 		if value, ok := status.VehiclesDisabled(); ok {
 			gauge(ch, stationVehiclesDisabledDesc, value, system.Name, status.StationID)
 			totalDisabled += value
+			sawDisabled = true
 		}
 		if status.NumDocksAvailable != nil {
 			value := float64(*status.NumDocksAvailable)
 			gauge(ch, stationDocksAvailableDesc, value, system.Name, status.StationID)
 			totalDocks += value
+			sawDocks = true
 		}
 		if status.NumDocksDisabled != nil {
 			gauge(ch, stationDocksDisabledDesc, float64(*status.NumDocksDisabled), system.Name, status.StationID)
@@ -333,11 +341,15 @@ func (c *Collector) collectStations(ch chan<- prometheus.Metric, system System, 
 	if len(seen) > 0 {
 		gauge(ch, systemStationsDesc, float64(len(seen)), system.Name)
 	}
-	// The totals come from the status feed. Without that feed the totals are
-	// unknown, and a 0 would read as an empty system.
-	if stationCount > 0 {
+	// Each total appears only when at least one station reported that field.
+	// Without it the total is unknown, and a 0 would read as an empty system.
+	if sawAvailable {
 		gauge(ch, systemVehiclesAvailableDesc, totalAvailable, system.Name)
+	}
+	if sawDisabled {
 		gauge(ch, systemVehiclesDisabledDesc, totalDisabled, system.Name)
+	}
+	if sawDocks {
 		gauge(ch, systemDocksAvailableDesc, totalDocks, system.Name)
 	}
 }

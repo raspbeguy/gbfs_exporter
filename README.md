@@ -266,6 +266,20 @@ without docks gets no `gbfs_station_docks_available`. A feed that omits
 `is_renting` gets no `gbfs_station_renting`, because a 0 reads as a closed
 station.
 
+The same rule covers the `gbfs_system_*` totals. Each one appears only when at
+least one station reported the field that it sums. GBFS lets an operator hide
+the disabled counters, and Strasbourg Vel'hop hides them at all 40 stations, so
+that system gets no `gbfs_system_vehicles_disabled`. An absent total means "not
+published", and a 0 would read as "nothing is broken".
+
+A total can still cover only part of the system, because one station can omit a
+field that the others report. To measure the coverage, compare the count of
+station series with the station count:
+
+```promql
+count by (system) (gbfs_station_docks_available) / gbfs_system_stations
+```
+
 GBFS 3.0 gives a name in several languages. The exporter keeps the English
 name. Without an English name, it keeps the first name of the list.
 
