@@ -971,10 +971,13 @@
           "mode": "details"
         },
         "view": {
-          "allLayers": true,
+          "allLayers": false,
           "id": "fit",
+          "layer": "Stations",
           "lat": 0,
           "lon": 0,
+          "maxZoom": 16,
+          "padding": 8,
           "zoom": 1
         }
       },
