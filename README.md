@@ -274,9 +274,15 @@ time() - gbfs_feed_last_updated_timestamp_seconds > 300
 can follow the operator instead of a fixed number:
 
 ```promql
-time() - gbfs_feed_last_updated_timestamp_seconds
+time() - gbfs_feed_last_updated_timestamp_seconds{feed!="gbfs"}
   > 10 * clamp_min(gbfs_feed_ttl_seconds, 60)
 ```
+
+Leave the auto-discovery file out of the alert. It lists the other feeds and
+changes rarely, so a stale timestamp on it is normal. Entur serves a
+Trondheim discovery file that states `ttl: 15` and carries a `last_updated`
+six hours old, while every feed that it lists is under a minute old. An alert
+that covers `feed="gbfs"` fires forever on that operator.
 
 A feed that omits `last_updated` or `ttl` gets no series for it.
 
