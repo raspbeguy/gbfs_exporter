@@ -1418,7 +1418,7 @@
           "type": "prometheus",
           "uid": "${datasource}"
         },
-        "definition": "label_values(gbfs_up, system)",
+        "definition": "query_result(last_over_time(gbfs_system_info[24h]))",
         "hide": 0,
         "includeAll": false,
         "label": "System",
@@ -1426,12 +1426,12 @@
         "name": "system",
         "options": [],
         "query": {
-          "qryType": 1,
-          "query": "label_values(gbfs_up, system)",
+          "qryType": 3,
+          "query": "query_result(last_over_time(gbfs_system_info[24h]))",
           "refId": "system"
         },
         "refresh": 1,
-        "regex": "",
+        "regex": "/system=\"(?<value>[^\"]+)\".*system_name=\"(?<text>[^\"]+)\"/",
         "skipUrlSync": false,
         "sort": 1,
         "type": "query"
