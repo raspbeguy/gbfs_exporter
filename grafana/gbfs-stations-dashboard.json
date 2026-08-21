@@ -15,11 +15,26 @@
       }
     ]
   },
-  "description": "One panel per station, showing occupancy over time. Selecting every station of a large system draws one panel per station, so a system with hundreds of stations draws hundreds of panels.",
+  "description": "One row per station: occupancy against capacity, the service flags, and the vehicle mix. Pick the stations you care about; the list is deliberately not an All, because a row for each of 293 stations is unreadable.",
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 1,
-  "links": [],
+  "links": [
+    {
+      "asDropdown": true,
+      "icon": "external link",
+      "includeVars": false,
+      "keepTime": true,
+      "tags": [
+        "gbfs"
+      ],
+      "targetBlank": false,
+      "title": "GBFS dashboards",
+      "tooltip": "",
+      "type": "dashboards",
+      "url": ""
+    }
+  ],
   "preload": false,
   "refresh": "1m",
   "schemaVersion": 39,
@@ -76,7 +91,7 @@
         },
         "definition": "query_result(last_over_time(gbfs_station_info{system=\"$system\"}[24h]))",
         "hide": 0,
-        "includeAll": true,
+        "includeAll": false,
         "label": "Station",
         "multi": true,
         "name": "station",
@@ -106,11 +121,25 @@
   "weekStart": "",
   "panels": [
     {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "id": 10,
+      "panels": [],
+      "repeat": "station",
+      "title": "${station:text}",
+      "type": "row"
+    },
+    {
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
       },
-      "description": "Vehicles a rider can take, stacked on the docks that accept a vehicle. The dashed line is the capacity of the station. A gap below the line means parking positions that neither hold a rentable vehicle nor accept one.",
+      "description": "Vehicles a rider can take, stacked on the docks that accept a vehicle, then on the space that neither holds a rentable vehicle nor accepts one. The three together reach the capacity line. The third band is derived by subtraction, because no GBFS field states it: for a car sharing bay it is mostly cars out on rental, and for a docked bike station it is broken docks or bikes.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -150,6 +179,7 @@
           },
           "mappings": [],
           "min": 0,
+          "decimals": 0,
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -187,6 +217,21 @@
                 "id": "color",
                 "value": {
                   "fixedColor": "blue",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Unavailable (derived)"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#8E8E8E",
                   "mode": "fixed"
                 }
               }
@@ -236,13 +281,12 @@
       },
       "gridPos": {
         "h": 8,
-        "w": 8,
+        "w": 15,
         "x": 0,
-        "y": 0
+        "y": 1
       },
       "id": 1,
       "interval": "1m",
-      "maxPerRow": 3,
       "options": {
         "legend": {
           "calcs": [
@@ -259,8 +303,6 @@
           "sort": "desc"
         }
       },
-      "repeat": "station",
-      "repeatDirection": "h",
       "targets": [
         {
           "datasource": {
@@ -268,7 +310,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "gbfs_station_vehicles_available{system=\"$system\", station_id=\"$station\"}",
+          "expr": "gbfs_station_vehicles_available{system=~\"$system\", station_id=\"$station\"}",
           "instant": false,
           "legendFormat": "Vehicles",
           "range": true,
@@ -280,7 +322,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "gbfs_station_docks_available{system=\"$system\", station_id=\"$station\"}",
+          "expr": "gbfs_station_docks_available{system=~\"$system\", station_id=\"$station\"}",
           "instant": false,
           "legendFormat": "Free docks",
           "range": true,
@@ -292,15 +334,215 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "gbfs_station_capacity{system=\"$system\", station_id=\"$station\"}",
+          "expr": "clamp_min(\n  gbfs_station_capacity{system=~\"$system\", station_id=\"$station\"}\n  - (gbfs_station_vehicles_available{system=~\"$system\", station_id=\"$station\"} or vector(0))\n  - (gbfs_station_docks_available{system=~\"$system\", station_id=\"$station\"} or vector(0))\n, 0)",
+          "instant": false,
+          "legendFormat": "Unavailable (derived)",
+          "range": true,
+          "refId": "C"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "gbfs_station_capacity{system=~\"$system\", station_id=\"$station\"}",
           "instant": false,
           "legendFormat": "Capacity",
+          "range": true,
+          "refId": "D"
+        }
+      ],
+      "title": "Vehicles and space",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "description": "The three service flags of this station. A station flat at zero vehicles reads as demand until this panel shows that renting stopped at the same moment, and then it is a fault. A flag the operator omits gets no row.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "fillOpacity": 80,
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineWidth": 0,
+            "spanNulls": false
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "color": "red",
+                  "index": 1,
+                  "text": "no"
+                },
+                "1": {
+                  "color": "green",
+                  "index": 0,
+                  "text": "yes"
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 4,
+        "x": 15,
+        "y": 1
+      },
+      "id": 2,
+      "options": {
+        "alignValue": "center",
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": false
+        },
+        "mergeValues": true,
+        "rowHeight": 0.8,
+        "showValue": "never",
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "gbfs_station_installed{system=~\"$system\", station_id=\"$station\"}",
+          "instant": false,
+          "legendFormat": "Installed",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "gbfs_station_renting{system=~\"$system\", station_id=\"$station\"}",
+          "instant": false,
+          "legendFormat": "Renting",
+          "range": true,
+          "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "gbfs_station_returning{system=~\"$system\", station_id=\"$station\"}",
+          "instant": false,
+          "legendFormat": "Returning",
           "range": true,
           "refId": "C"
         }
       ],
-      "title": "${station:text}",
-      "type": "timeseries"
+      "title": "Service",
+      "type": "state-timeline"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "description": "What stands at this station right now, by form factor and drive. This needs a module with per_vehicle_type set.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [],
+          "min": 0,
+          "unit": "short",
+          "decimals": 0,
+          "noValue": "This system reports no per-type breakdown at stations.",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 5,
+        "x": 19,
+        "y": 1
+      },
+      "id": 3,
+      "options": {
+        "displayMode": "basic",
+        "maxVizHeight": 300,
+        "minVizHeight": 16,
+        "minVizWidth": 8,
+        "namePlacement": "auto",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showUnfilled": true,
+        "sizing": "auto",
+        "valueMode": "color"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "sum by (form_factor, propulsion_type) (\n  gbfs_station_type_vehicles_available{system=~\"$system\", station_id=\"$station\"}\n)",
+          "instant": true,
+          "legendFormat": "{{form_factor}} · {{propulsion_type}}",
+          "range": false,
+          "refId": "A"
+        }
+      ],
+      "title": "Vehicle mix now",
+      "type": "bargauge"
     }
   ]
 }

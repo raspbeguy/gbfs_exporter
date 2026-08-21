@@ -19,7 +19,22 @@
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 1,
-  "links": [],
+  "links": [
+    {
+      "asDropdown": true,
+      "icon": "external link",
+      "includeVars": false,
+      "keepTime": true,
+      "tags": [
+        "gbfs"
+      ],
+      "targetBlank": false,
+      "title": "GBFS dashboards",
+      "tooltip": "",
+      "type": "dashboards",
+      "url": ""
+    }
+  ],
   "panels": [
     {
       "collapsed": false,
@@ -378,7 +393,7 @@
         "type": "prometheus",
         "uid": "${datasource}"
       },
-      "description": "Vehicles as a part of all the docks that report a state. A high value means full stations, and a low value means empty stations.",
+      "description": "Vehicles at stations divided by the capacity of the stations that report both a capacity and a vehicle count. The old ratio divided by the free docks, which reported a car system with no free docks as permanently full.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -441,13 +456,13 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "sum(gbfs_system_vehicles_available{system=~\"$system\"})\n  / clamp_min(sum(gbfs_system_vehicles_available{system=~\"$system\"})\n      + sum(gbfs_system_docks_available{system=~\"$system\"}), 1)",
+          "expr": "sum(\n  gbfs_station_vehicles_available{system=~\"$system\"}\n    and on (system, station_id) gbfs_station_capacity{system=~\"$system\"}\n)\n/\nsum(\n  gbfs_station_capacity{system=~\"$system\"}\n    and on (system, station_id) gbfs_station_vehicles_available{system=~\"$system\"}\n)",
+          "refId": "A",
           "instant": true,
-          "range": false,
-          "refId": "A"
+          "range": false
         }
       ],
-      "title": "Fill rate",
+      "title": "Occupancy (derived)",
       "type": "gauge"
     },
     {
@@ -762,7 +777,7 @@
         "type": "prometheus",
         "uid": "${datasource}"
       },
-      "description": "A station is empty when it holds no vehicle. A station is full when it has no free dock.",
+      "description": "A station is empty when it holds no vehicle. A station is full when it has no free dock. The full count is left out for an operator that reports no free docks anywhere, because every station would read as full. Citiz is one: it reports zero docks at all 293 stations.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -857,7 +872,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "count by (system) (gbfs_station_docks_available{system=~\"$system\"} == 0)\n  or 0 * count by (system) (gbfs_station_docks_available{system=~\"$system\"})",
+          "expr": "count(gbfs_station_docks_available{system=~\"$system\"} == 0)\n  and on () (sum(gbfs_station_docks_available{system=~\"$system\"}) > 0)",
           "instant": false,
           "range": true,
           "refId": "B",
@@ -1177,7 +1192,440 @@
         "h": 1,
         "w": 24,
         "x": 0,
+        "y": 30
+      },
+      "id": 30,
+      "panels": [],
+      "title": "Station service",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "description": "Stations with at least one service flag off. GBFS carries three: is_installed says the station stands on the street, is_renting says it gives vehicles out, and is_returning says it takes them back. A flag the operator omits is not counted.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              }
+            ]
+          },
+          "unit": "short",
+          "decimals": 0,
+          "noValue": "No station publishes a service flag."
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 5,
+        "x": 0,
         "y": 31
+      },
+      "id": 31,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "count(min by (station_id) ({__name__=~\"gbfs_station_(installed|renting|returning)\", system=~\"$system\"}) == 0)\n  or (count(min by (station_id) ({__name__=~\"gbfs_station_(installed|renting|returning)\", system=~\"$system\"})) * 0)",
+          "refId": "A",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "title": "Stations out of service",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "description": "Each flag counted separately over time. A station can stand on the street and still refuse to give a vehicle out or take one back.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "stepAfter",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short",
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 9,
+        "x": 5,
+        "y": 31
+      },
+      "id": 32,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "count(gbfs_station_installed{system=~\"$system\"} == 0) or (count(gbfs_station_installed{system=~\"$system\"}) * 0)",
+          "refId": "A",
+          "instant": false,
+          "range": true,
+          "legendFormat": "not installed"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "count(gbfs_station_renting{system=~\"$system\"} == 0) or (count(gbfs_station_renting{system=~\"$system\"}) * 0)",
+          "refId": "B",
+          "instant": false,
+          "range": true,
+          "legendFormat": "not renting"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "count(gbfs_station_returning{system=~\"$system\"} == 0) or (count(gbfs_station_returning{system=~\"$system\"}) * 0)",
+          "refId": "C",
+          "instant": false,
+          "range": true,
+          "legendFormat": "not returning"
+        }
+      ],
+      "title": "Stations out of service over time",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "description": "Which stations are not fully in service, and which flag is off. A station flat at zero vehicles reads as demand until this table shows that it stopped renting, and then it is a fault.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "Installed|Renting|Returning"
+            },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "0": {
+                        "color": "red",
+                        "index": 1,
+                        "text": "no"
+                      },
+                      "1": {
+                        "color": "green",
+                        "index": 0,
+                        "text": "yes"
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "custom.width",
+                "value": 90
+              },
+              {
+                "id": "noValue",
+                "value": "not published"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Station"
+            },
+            "properties": [
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "targetBlank": false,
+                    "title": "Open this station",
+                    "url": "/d/gbfs-stations?var-datasource=${datasource}&var-system=${system}&var-station=${__data.fields.station_id}&${__url_time_range}"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "station_id"
+            },
+            "properties": [
+              {
+                "id": "custom.hidden",
+                "value": true
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 10,
+        "x": 14,
+        "y": 31
+      },
+      "id": 33,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
+        "showHeader": true,
+        "enablePagination": true,
+        "sortBy": [
+          {
+            "desc": false,
+            "displayName": "Station"
+          }
+        ]
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "min by (station_id) ({__name__=~\"gbfs_station_(installed|renting|returning)\", system=~\"$system\"}) == 0",
+          "refId": "A",
+          "format": "table",
+          "instant": true,
+          "range": false
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "gbfs_station_installed{system=~\"$system\"}",
+          "refId": "B",
+          "format": "table",
+          "instant": true,
+          "range": false
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "gbfs_station_renting{system=~\"$system\"}",
+          "refId": "C",
+          "format": "table",
+          "instant": true,
+          "range": false
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "gbfs_station_returning{system=~\"$system\"}",
+          "refId": "D",
+          "format": "table",
+          "instant": true,
+          "range": false
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "gbfs_station_info{system=~\"$system\"}",
+          "refId": "E",
+          "format": "table",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "title": "Stations not fully in service",
+      "transformations": [
+        {
+          "id": "filterFieldsByName",
+          "options": {
+            "exclude": {
+              "pattern": "^(Time.*|__name__|job|instance|system|lat|lon)$"
+            }
+          }
+        },
+        {
+          "id": "joinByField",
+          "options": {
+            "byField": "station_id",
+            "mode": "inner"
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Value #A": true
+            },
+            "indexByName": {
+              "station_name": 0,
+              "Value #B": 1,
+              "Value #C": 2,
+              "Value #D": 3,
+              "station_id": 4
+            },
+            "renameByName": {
+              "station_name": "Station",
+              "Value #B": "Installed",
+              "Value #C": "Renting",
+              "Value #D": "Returning"
+            }
+          }
+        }
+      ],
+      "type": "table"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 39
       },
       "id": 14,
       "panels": [],
@@ -1219,7 +1667,7 @@
         "h": 12,
         "w": 14,
         "x": 0,
-        "y": 32
+        "y": 40
       },
       "id": 15,
       "options": {
@@ -1452,7 +1900,7 @@
         "h": 12,
         "w": 10,
         "x": 14,
-        "y": 32
+        "y": 40
       },
       "id": 16,
       "options": {
@@ -1542,7 +1990,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 44
+        "y": 52
       },
       "id": 17,
       "panels": [],
@@ -1606,7 +2054,7 @@
         "h": 7,
         "w": 16,
         "x": 0,
-        "y": 45
+        "y": 53
       },
       "id": 18,
       "options": {
@@ -1685,7 +2133,7 @@
         "h": 7,
         "w": 8,
         "x": 16,
-        "y": 45
+        "y": 53
       },
       "id": 19,
       "options": {

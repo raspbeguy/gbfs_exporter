@@ -411,12 +411,14 @@ Scrape the exporter itself with a second, plain job:
 
 ## Grafana dashboards
 
-The folder `grafana/` holds two dashboards.
+The folder `grafana/` holds three dashboards. Each one links to the others from a
+dropdown in its top bar.
 
-| File | Content |
-| --- | --- |
-| `gbfs-dashboard.json` | One system at a time: totals, feed health, and a table of every station. |
-| `gbfs-stations-dashboard.json` | One panel per station, showing occupancy over time. |
+| File | Scope | Content |
+| --- | --- | --- |
+| `gbfs-health-dashboard.json` | Every system at once | Feed freshness against the published ttl, which feed failed, scrape cost, the plausibility of each system's numbers, and the health of the exporter itself. |
+| `gbfs-dashboard.json` | One system | Totals, occupancy, the fleet by drive, station service, a map, and a table of every station. |
+| `gbfs-stations-dashboard.json` | Chosen stations | One row per station: occupancy against capacity, the service flags, and the vehicle mix. |
 
 To import one by hand, follow these steps:
 
@@ -437,24 +439,35 @@ System dropdown shows the name that the operator publishes, and it takes one
 value.
 
 The station dashboard adds a **Station** variable that takes several values,
-and it draws one panel per station. The graph stacks the vehicles that a rider
-can take on the docks that accept a vehicle, so the split of the stack is the
-occupancy of the station. A dashed line holds the capacity, and the legend
-holds all three. A gap below the line means parking positions that neither
-hold a rentable vehicle nor accept one.
+and it draws one row per station. The graph stacks three bands to the capacity
+line: the vehicles that a rider can take, the docks that accept a vehicle, and
+the space that does neither. That third band is derived by subtraction, because
+no GBFS field states it. At a car sharing bay it is mostly cars out on rental,
+and at a docked bike station it is broken docks or bikes.
 
-Do not select every station of a large system. The dashboard draws one panel
-per station, and Oslo publishes 268 of them.
+The station list offers no **All** entry. One row per station is unreadable for
+a system with hundreds of them.
 
-The system dashboard holds five rows:
+Pick the stations you want. The dashboard draws one row for each.
+
+The system dashboard holds six rows:
 
 | Row | Content |
 | --- | --- |
-| Overview | The state of the system, the station count, the vehicle and dock counts, and the fill rate. |
+| Overview | The state of the system, the station count, the vehicle and dock counts, and the occupancy. |
 | Availability | Vehicles and docks over time, the vehicle feed broken out by state and by `docked`, and the count of empty and full stations. |
 | Vehicle types | The types that the operator publishes, and the fleet split by drive. |
+| Station service | Stations with a service flag off, over time and in a table. |
 | Stations | A map of every station, and a sortable table of every station with its vehicles and free docks. |
 | Feed health | The overall state and the state of each feed over time, and the metadata of the system. |
+
+Occupancy divides the vehicles at stations by the capacity of the stations that
+report both. It does not divide by the free docks. An operator that reports no
+free docks would otherwise read as permanently full, and Citiz Grand Est is one:
+it reports zero free docks at all 293 of its stations.
+
+The count of full stations is left out for such an operator, for the same
+reason.
 
 The map and the table join `gbfs_station_info`. The map takes the position from
 it, and the table takes the name. The dashboard needs Grafana 10 or higher for
