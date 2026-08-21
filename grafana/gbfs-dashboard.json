@@ -1075,7 +1075,7 @@
               {
                 "id": "custom.cellOptions",
                 "value": {
-                  "mode": "gradient",
+                  "mode": "basic",
                   "type": "gauge"
                 }
               },
@@ -1114,7 +1114,7 @@
               {
                 "id": "custom.cellOptions",
                 "value": {
-                  "mode": "gradient",
+                  "mode": "basic",
                   "type": "gauge"
                 }
               },
