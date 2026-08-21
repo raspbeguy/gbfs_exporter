@@ -446,12 +446,13 @@ hold a rentable vehicle nor accept one.
 Do not select every station of a large system. The dashboard draws one panel
 per station, and Oslo publishes 268 of them.
 
-The system dashboard holds four rows:
+The system dashboard holds five rows:
 
 | Row | Content |
 | --- | --- |
 | Overview | The state of the system, the station count, the vehicle and dock counts, and the fill rate. |
 | Availability | Vehicles and docks over time, the vehicle feed broken out by state and by `docked`, and the count of empty and full stations. |
+| Vehicle types | The types that the operator publishes, and the fleet split by drive. |
 | Stations | A map of every station, and a sortable table of every station with its vehicles and free docks. |
 | Feed health | The overall state and the state of each feed over time, and the metadata of the system. |
 
