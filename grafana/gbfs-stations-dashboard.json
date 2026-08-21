@@ -110,7 +110,7 @@
         "type": "prometheus",
         "uid": "${datasource}"
       },
-      "description": "Vehicles a rider can take, stacked on the docks that accept a vehicle. The two together make the parking positions that report a state, so the height is the usable size of the station and the split is its occupancy.",
+      "description": "Vehicles a rider can take, stacked on the docks that accept a vehicle. The dashed line is the capacity of the station. A gap below the line means parking positions that neither hold a rentable vehicle nor accept one.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -191,6 +191,46 @@
                 }
               }
             ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Capacity"
+            },
+            "properties": [
+              {
+                "id": "custom.stacking",
+                "value": {
+                  "group": "A",
+                  "mode": "none"
+                }
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 0
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 2
+              },
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "dash": [
+                    8,
+                    6
+                  ],
+                  "fill": "dash"
+                }
+              },
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "text",
+                  "mode": "fixed"
+                }
+              }
+            ]
           }
         ]
       },
@@ -245,6 +285,18 @@
           "legendFormat": "Free docks",
           "range": true,
           "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "gbfs_station_capacity{system=\"$system\", station_id=\"$station\"}",
+          "instant": false,
+          "legendFormat": "Capacity",
+          "range": true,
+          "refId": "C"
         }
       ],
       "title": "${station:text}",

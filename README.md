@@ -422,8 +422,10 @@ value.
 
 The station dashboard adds a **Station** variable that takes several values,
 and it draws one panel per station. The graph stacks the vehicles that a rider
-can take on the docks that accept a vehicle, so the height of the stack is the
-usable size of the station and the split is its occupancy.
+can take on the docks that accept a vehicle, so the split of the stack is the
+occupancy of the station. A dashed line holds the capacity, and the legend
+holds all three. A gap below the line means parking positions that neither
+hold a rentable vehicle nor accept one.
 
 Do not select every station of a large system. The dashboard draws one panel
 per station, and Oslo publishes 268 of them.
