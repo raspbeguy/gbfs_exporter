@@ -37,6 +37,26 @@ var (
 		"1 if the exporter read every feed that the system publishes, 0 if any feed or the discovery document failed.",
 		[]string{"system"}, nil)
 
+	feedUpDesc = prometheus.NewDesc(
+		namespace+"_feed_up",
+		"1 if the exporter read this feed, 0 if it failed. A feed that the system does not publish gets no series.",
+		[]string{"system", "feed"}, nil)
+
+	feedLastUpdatedDesc = prometheus.NewDesc(
+		namespace+"_feed_last_updated_timestamp_seconds",
+		"Unix time of the last_updated header of the feed. Staleness is time() minus this value.",
+		[]string{"system", "feed"}, nil)
+
+	feedTTLDesc = prometheus.NewDesc(
+		namespace+"_feed_ttl_seconds",
+		"Seconds that the publisher says will pass before the feed changes. 0 means that the feed is always fresh.",
+		[]string{"system", "feed"}, nil)
+
+	feedDurationDesc = prometheus.NewDesc(
+		namespace+"_feed_duration_seconds",
+		"Seconds that the exporter took to read the feed.",
+		[]string{"system", "feed"}, nil)
+
 	systemInfoDesc = prometheus.NewDesc(
 		namespace+"_system_info",
 		"System metadata. The value is always 1.",
@@ -123,7 +143,8 @@ var (
 		[]string{"system"}, nil)
 
 	allDescs = []*prometheus.Desc{
-		upDesc, systemInfoDesc, stationInfoDesc, stationCapacityDesc,
+		upDesc, feedUpDesc, feedLastUpdatedDesc, feedTTLDesc, feedDurationDesc,
+		systemInfoDesc, stationInfoDesc, stationCapacityDesc,
 		stationVehiclesAvailableDesc, stationVehiclesDisabledDesc,
 		stationDocksAvailableDesc, stationDocksDisabledDesc,
 		stationInstalledDesc, stationRentingDesc, stationReturningDesc,
@@ -199,6 +220,8 @@ func (c *Collector) collectSystem(ctx context.Context, ch chan<- prometheus.Metr
 		return
 	}
 
+	c.collectFeeds(ch, system, snapshot)
+
 	if snapshot.SystemID != "" || snapshot.SystemName != "" {
 		gauge(ch, systemInfoDesc, 1, system.Name, snapshot.SystemID,
 			snapshot.SystemName, snapshot.Version, snapshot.Timezone)
@@ -206,6 +229,29 @@ func (c *Collector) collectSystem(ctx context.Context, ch chan<- prometheus.Metr
 
 	c.collectStations(ch, system, snapshot)
 	c.collectVehicles(ch, system, snapshot)
+}
+
+// collectFeeds reports the health and the freshness of each feed.
+//
+// A feed that the auto-discovery file does not list gets no series at all,
+// because the system does not publish it.
+func (c *Collector) collectFeeds(ch chan<- prometheus.Metric, system System, snapshot *gbfs.Snapshot) {
+	for name, feed := range snapshot.Feeds {
+		up := float64(0)
+		if feed.OK {
+			up = 1
+		}
+		gauge(ch, feedUpDesc, up, system.Name, name)
+		gauge(ch, feedDurationDesc, feed.Duration.Seconds(), system.Name, name)
+		// A zero time writes -62135596800, which reads as a feed that is
+		// two thousand years stale. Write nothing instead.
+		if !feed.LastUpdated.IsZero() {
+			gauge(ch, feedLastUpdatedDesc, float64(feed.LastUpdated.Unix()), system.Name, name)
+		}
+		if feed.TTL != nil {
+			gauge(ch, feedTTLDesc, float64(*feed.TTL), system.Name, name)
+		}
+	}
 }
 
 func (c *Collector) collectStations(ch chan<- prometheus.Metric, system System, snapshot *gbfs.Snapshot) {

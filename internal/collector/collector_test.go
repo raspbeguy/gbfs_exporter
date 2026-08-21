@@ -154,7 +154,18 @@ gbfs_station_returning{station_id="2",system="demo"} 1
 gbfs_station_vehicles_disabled{station_id="1",system="demo"} 1
 gbfs_up{system="demo"} 1
 `
-	if err := testutil.CollectAndCompare(subject, strings.NewReader(expected)); err != nil {
+	names := []string{
+		"gbfs_free_vehicles", "gbfs_station_capacity",
+		"gbfs_station_docks_available", "gbfs_station_info",
+		"gbfs_station_installed", "gbfs_station_renting",
+		"gbfs_station_returning", "gbfs_station_vehicles_available",
+		"gbfs_station_vehicles_available_by_type", "gbfs_station_vehicles_disabled",
+		"gbfs_system_docks_available", "gbfs_system_free_vehicles",
+		"gbfs_system_info", "gbfs_system_stations",
+		"gbfs_system_vehicles_available", "gbfs_system_vehicles_disabled",
+		"gbfs_up",
+	}
+	if err := testutil.CollectAndCompare(subject, strings.NewReader(expected), names...); err != nil {
 		t.Error(err)
 	}
 }
@@ -197,8 +208,13 @@ func TestCollectReportsDownSystem(t *testing.T) {
 # HELP gbfs_up 1 if the exporter read every feed that the system publishes, 0 if any feed or the discovery document failed.
 # TYPE gbfs_up gauge
 gbfs_up{system="demo"} 0
+# HELP gbfs_feed_up 1 if the exporter read this feed, 0 if it failed. A feed that the system does not publish gets no series.
+# TYPE gbfs_feed_up gauge
+gbfs_feed_up{feed="gbfs",system="demo"} 0
 `
-	if err := testutil.CollectAndCompare(subject, strings.NewReader(expected)); err != nil {
+	// The discovery file failed, so the exporter read no other feed and
+	// reports only the discovery feed as down.
+	if err := testutil.CollectAndCompare(subject, strings.NewReader(expected), "gbfs_up", "gbfs_feed_up"); err != nil {
 		t.Error(err)
 	}
 }
@@ -300,5 +316,83 @@ gbfs_up{system="demo"} 0
 `
 	if err := testutil.CollectAndCompare(bound, strings.NewReader(expected), "gbfs_up"); err != nil {
 		t.Error(err)
+	}
+}
+
+// TestCollectFeedHealth checks the per-feed health and freshness metrics.
+//
+// The GBFS 2.x fixture names its vehicle feed free_bike_status. The exporter
+// must report it under the canonical name vehicle_status, so that one alert
+// matches both GBFS versions.
+func TestCollectFeedHealth(t *testing.T) {
+	server := fakeSystem(t, version2Feeds)
+	subject := newCollector(t, server.URL+"/gbfs.json", false)
+
+	expected := `
+# HELP gbfs_feed_up 1 if the exporter read this feed, 0 if it failed. A feed that the system does not publish gets no series.
+# TYPE gbfs_feed_up gauge
+gbfs_feed_up{feed="gbfs",system="demo"} 1
+gbfs_feed_up{feed="station_information",system="demo"} 1
+gbfs_feed_up{feed="station_status",system="demo"} 1
+gbfs_feed_up{feed="system_information",system="demo"} 1
+gbfs_feed_up{feed="vehicle_status",system="demo"} 1
+gbfs_feed_up{feed="vehicle_types",system="demo"} 1
+# HELP gbfs_feed_last_updated_timestamp_seconds Unix time of the last_updated header of the feed. Staleness is time() minus this value.
+# TYPE gbfs_feed_last_updated_timestamp_seconds gauge
+gbfs_feed_last_updated_timestamp_seconds{feed="gbfs",system="demo"} 1.6094592e+09
+# HELP gbfs_feed_ttl_seconds Seconds that the publisher says will pass before the feed changes. 0 means that the feed is always fresh.
+# TYPE gbfs_feed_ttl_seconds gauge
+gbfs_feed_ttl_seconds{feed="gbfs",system="demo"} 60
+`
+	names := []string{
+		"gbfs_feed_up", "gbfs_feed_last_updated_timestamp_seconds",
+		"gbfs_feed_ttl_seconds",
+	}
+	if err := testutil.CollectAndCompare(subject, strings.NewReader(expected), names...); err != nil {
+		t.Error(err)
+	}
+}
+
+// TestCollectFeedHealthReportsOneBrokenFeed checks that a single failing feed
+// is named. The discovery file lists vehicle_types.json, but the server does
+// not serve it.
+func TestCollectFeedHealthReportsOneBrokenFeed(t *testing.T) {
+	files := map[string]string{}
+	for path, body := range version2Feeds {
+		if path == "/vehicle_types.json" {
+			continue
+		}
+		files[path] = body
+	}
+	server := fakeSystem(t, files)
+	subject := newCollector(t, server.URL+"/gbfs.json", false)
+
+	expected := `
+# HELP gbfs_feed_up 1 if the exporter read this feed, 0 if it failed. A feed that the system does not publish gets no series.
+# TYPE gbfs_feed_up gauge
+gbfs_feed_up{feed="gbfs",system="demo"} 1
+gbfs_feed_up{feed="station_information",system="demo"} 1
+gbfs_feed_up{feed="station_status",system="demo"} 1
+gbfs_feed_up{feed="system_information",system="demo"} 1
+gbfs_feed_up{feed="vehicle_status",system="demo"} 1
+gbfs_feed_up{feed="vehicle_types",system="demo"} 0
+# HELP gbfs_up 1 if the exporter read every feed that the system publishes, 0 if any feed or the discovery document failed.
+# TYPE gbfs_up gauge
+gbfs_up{system="demo"} 0
+`
+	if err := testutil.CollectAndCompare(subject, strings.NewReader(expected), "gbfs_feed_up", "gbfs_up"); err != nil {
+		t.Error(err)
+	}
+}
+
+// TestCollectFeedDurationIsPresent checks that the duration metric exists for
+// every feed. Its value is a measured time, so only presence is checked.
+func TestCollectFeedDurationIsPresent(t *testing.T) {
+	server := fakeSystem(t, version2Feeds)
+	subject := newCollector(t, server.URL+"/gbfs.json", false)
+
+	got := testutil.CollectAndCount(subject, "gbfs_feed_duration_seconds")
+	if got != 6 {
+		t.Fatalf("got %d duration series, want 6", got)
 	}
 }

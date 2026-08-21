@@ -83,6 +83,33 @@ func (c *Client) get(ctx context.Context, feedURL string, headers map[string]str
 	return nil
 }
 
+// Canonical feed names. The exporter reports a feed under one name across
+// every GBFS version. GBFS 2.x calls the vehicle feed free_bike_status, and
+// GBFS 3.0 calls it vehicle_status. Both report as FeedVehicleStatus, so one
+// alert matches both versions.
+const (
+	FeedDiscovery          = "gbfs"
+	FeedSystemInformation  = "system_information"
+	FeedStationInformation = "station_information"
+	FeedStationStatus      = "station_status"
+	FeedVehicleStatus      = "vehicle_status"
+	FeedVehicleTypes       = "vehicle_types"
+)
+
+// FeedResult is the outcome of one feed read.
+type FeedResult struct {
+	// OK is true if the client read and decoded the feed.
+	OK bool
+	// LastUpdated is the last_updated header of the feed. The zero value
+	// means that the feed gave no value.
+	LastUpdated time.Time
+	// TTL is the ttl header of the feed, in seconds. A nil value means that
+	// the feed gave no value.
+	TTL *int
+	// Duration is the time that the read took.
+	Duration time.Duration
+}
+
 // Snapshot holds one reading of every feed that the exporter needs.
 type Snapshot struct {
 	Version      string
@@ -93,6 +120,10 @@ type Snapshot struct {
 	Status       []StationStatus
 	Vehicles     []Vehicle
 	VehicleTypes map[string]VehicleType
+	// Feeds holds one entry per feed that the system publishes, under a
+	// canonical name. A feed that the auto-discovery file does not list gets
+	// no entry, because the system does not publish it.
+	Feeds map[string]FeedResult
 }
 
 // Fetch reads the auto-discovery file and then every feed that it lists.
@@ -100,22 +131,29 @@ type Snapshot struct {
 // A missing optional feed is not an error. A system with docks has no vehicle
 // feed, and a free-floating system has no station feed.
 func (c *Client) Fetch(ctx context.Context, discoveryURL string, options FetchOptions) (*Snapshot, error) {
+	snapshot := &Snapshot{
+		Version:      "1.0",
+		VehicleTypes: map[string]VehicleType{},
+		Feeds:        map[string]FeedResult{},
+	}
+
+	// The snapshot is never nil, even when the auto-discovery file fails. The
+	// caller still needs to report that the discovery feed is down.
 	var discovery Discovery
-	if err := c.get(ctx, discoveryURL, options.Headers, &discovery); err != nil {
-		return nil, err
+	start := time.Now()
+	err := c.get(ctx, discoveryURL, options.Headers, &discovery)
+	snapshot.Feeds[FeedDiscovery] = result(discovery.FeedHeader, time.Since(start), err)
+	if err != nil {
+		return snapshot, err
 	}
 
 	feeds, err := feedIndex(discoveryURL, discovery.Data.Feeds)
 	if err != nil {
-		return nil, err
+		return snapshot, err
 	}
 
-	snapshot := &Snapshot{
-		Version:      discovery.Version,
-		VehicleTypes: map[string]VehicleType{},
-	}
-	if snapshot.Version == "" {
-		snapshot.Version = "1.0"
+	if discovery.Version != "" {
+		snapshot.Version = discovery.Version
 	}
 
 	var (
@@ -127,8 +165,10 @@ func (c *Client) Fetch(ctx context.Context, discoveryURL string, options FetchOp
 	if options.MaxConcurrency > 0 {
 		slots = make(chan struct{}, options.MaxConcurrency)
 	}
-	fetch := func(name string, decode func(context.Context, string) error) {
-		feedURL, ok := feeds[name]
+	// fetch reads one feed. listedName is the name in the auto-discovery
+	// file, and canonical is the name that the snapshot reports it under.
+	fetch := func(listedName, canonical string, decode func(context.Context, string) (FeedHeader, error)) {
+		feedURL, ok := feeds[listedName]
 		if !ok {
 			return
 		}
@@ -141,80 +181,87 @@ func (c *Client) Fetch(ctx context.Context, discoveryURL string, options FetchOp
 					defer func() { <-slots }()
 				case <-ctx.Done():
 					mutex.Lock()
-					failed = append(failed, fmt.Errorf("gbfs: gave up before reading %s: %w", name, ctx.Err()))
+					failed = append(failed, fmt.Errorf("gbfs: gave up before reading %s: %w", canonical, ctx.Err()))
+					snapshot.Feeds[canonical] = FeedResult{}
 					mutex.Unlock()
 					return
 				}
 			}
-			if err := decode(ctx, feedURL); err != nil {
-				mutex.Lock()
+			start := time.Now()
+			header, err := decode(ctx, feedURL)
+			taken := time.Since(start)
+			mutex.Lock()
+			snapshot.Feeds[canonical] = result(header, taken, err)
+			if err != nil {
 				failed = append(failed, err)
-				mutex.Unlock()
 			}
+			mutex.Unlock()
 		}()
 	}
 
-	fetch("system_information", func(ctx context.Context, u string) error {
+	fetch(FeedSystemInformation, FeedSystemInformation, func(ctx context.Context, u string) (FeedHeader, error) {
 		var feed SystemInformation
 		if err := c.get(ctx, u, options.Headers, &feed); err != nil {
-			return err
+			return feed.FeedHeader, err
 		}
 		mutex.Lock()
 		defer mutex.Unlock()
 		snapshot.SystemID = feed.Data.SystemID
 		snapshot.SystemName = string(feed.Data.Name)
 		snapshot.Timezone = feed.Data.Timezone
-		return nil
+		return feed.FeedHeader, nil
 	})
 
-	fetch("station_information", func(ctx context.Context, u string) error {
+	fetch(FeedStationInformation, FeedStationInformation, func(ctx context.Context, u string) (FeedHeader, error) {
 		var feed StationInformation
 		if err := c.get(ctx, u, options.Headers, &feed); err != nil {
-			return err
+			return feed.FeedHeader, err
 		}
 		mutex.Lock()
 		defer mutex.Unlock()
 		snapshot.Stations = feed.Data.Stations
-		return nil
+		return feed.FeedHeader, nil
 	})
 
-	fetch("station_status", func(ctx context.Context, u string) error {
+	fetch(FeedStationStatus, FeedStationStatus, func(ctx context.Context, u string) (FeedHeader, error) {
 		var feed StationStatusFeed
 		if err := c.get(ctx, u, options.Headers, &feed); err != nil {
-			return err
+			return feed.FeedHeader, err
 		}
 		mutex.Lock()
 		defer mutex.Unlock()
 		snapshot.Status = feed.Data.Stations
-		return nil
+		return feed.FeedHeader, nil
 	})
 
-	fetch("vehicle_types", func(ctx context.Context, u string) error {
+	fetch(FeedVehicleTypes, FeedVehicleTypes, func(ctx context.Context, u string) (FeedHeader, error) {
 		var feed VehicleTypesFeed
 		if err := c.get(ctx, u, options.Headers, &feed); err != nil {
-			return err
+			return feed.FeedHeader, err
 		}
 		mutex.Lock()
 		defer mutex.Unlock()
 		for _, vehicleType := range feed.Data.VehicleTypes {
 			snapshot.VehicleTypes[vehicleType.VehicleTypeID] = vehicleType
 		}
-		return nil
+		return feed.FeedHeader, nil
 	})
 
-	vehicleFeed := "vehicle_status"
+	// GBFS 2.x names the vehicle feed free_bike_status. Both names report
+	// under the canonical FeedVehicleStatus.
+	vehicleFeed := FeedVehicleStatus
 	if _, ok := feeds[vehicleFeed]; !ok {
 		vehicleFeed = "free_bike_status"
 	}
-	fetch(vehicleFeed, func(ctx context.Context, u string) error {
+	fetch(vehicleFeed, FeedVehicleStatus, func(ctx context.Context, u string) (FeedHeader, error) {
 		var feed VehicleStatusFeed
 		if err := c.get(ctx, u, options.Headers, &feed); err != nil {
-			return err
+			return feed.FeedHeader, err
 		}
 		mutex.Lock()
 		defer mutex.Unlock()
 		snapshot.Vehicles = feed.All()
-		return nil
+		return feed.FeedHeader, nil
 	})
 
 	group.Wait()
@@ -246,6 +293,16 @@ func feedIndex(discoveryURL string, feeds []Feed) (map[string]string, error) {
 		index[name] = base.ResolveReference(reference).String()
 	}
 	return index, nil
+}
+
+// result records what happened when the client read one feed.
+func result(header FeedHeader, taken time.Duration, err error) FeedResult {
+	return FeedResult{
+		OK:          err == nil,
+		LastUpdated: header.LastUpdated.Time,
+		TTL:         header.TTL,
+		Duration:    taken,
+	}
 }
 
 func joinErrors(errs []error) error {

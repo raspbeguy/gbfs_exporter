@@ -189,6 +189,10 @@ label, which holds the URL of the feed.
 | Metric | Extra labels | Meaning |
 | --- | --- | --- |
 | `gbfs_up` | | 1 if the exporter read every feed that the system publishes, 0 if any feed or the discovery file failed. |
+| `gbfs_feed_up` | `feed` | 1 if the exporter read this feed, 0 if it failed. |
+| `gbfs_feed_last_updated_timestamp_seconds` | `feed` | Unix time of the `last_updated` header of the feed. |
+| `gbfs_feed_ttl_seconds` | `feed` | Seconds before the publisher changes the feed. 0 means always fresh. |
+| `gbfs_feed_duration_seconds` | `feed` | Seconds that the exporter took to read the feed. |
 | `gbfs_system_info` | `system_id`, `name`, `version`, `timezone` | System metadata. The value is always 1. |
 | `gbfs_station_info` | `station_id`, `name`, `lat`, `lon` | Station metadata. The value is always 1. |
 | `gbfs_station_capacity` | `station_id` | Total parking positions: docking points for a physical station, parkable vehicles for a virtual one. |
@@ -218,7 +222,44 @@ A feed that fails does not remove the feeds that answered. The exporter sets
 not on a metric that disappears.
 
 A failure of the auto-discovery file also sets `gbfs_up` to 0. In that case the
-exporter read no feed at all, so it publishes no other metric.
+exporter read no feed at all, so it publishes only
+`gbfs_feed_up{feed="gbfs"} 0`.
+
+`gbfs_up` is one bit for the whole system. To find the feed that failed, use
+`gbfs_feed_up`. The `feed` label holds one of these names:
+
+| Name | File |
+| --- | --- |
+| `gbfs` | The auto-discovery file. |
+| `system_information` | `system_information.json` |
+| `station_information` | `station_information.json` |
+| `station_status` | `station_status.json` |
+| `vehicle_status` | `vehicle_status.json`, or `free_bike_status.json` in GBFS 2.x |
+| `vehicle_types` | `vehicle_types.json` |
+
+A feed that the system does not publish gets no `gbfs_feed_up` series. The
+absence means "this system does not publish that feed", and not "this feed is
+down".
+
+### Stale data
+
+An operator can serve HTTP 200 with data that stopped changing hours ago. Such
+a feed reads as healthy, because every fetch succeeds. Watch the age of the
+data instead:
+
+```promql
+time() - gbfs_feed_last_updated_timestamp_seconds > 300
+```
+
+`gbfs_feed_ttl_seconds` holds the budget that the publisher states, so an alert
+can follow the operator instead of a fixed number:
+
+```promql
+time() - gbfs_feed_last_updated_timestamp_seconds
+  > 10 * clamp_min(gbfs_feed_ttl_seconds, 60)
+```
+
+A feed that omits `last_updated` or `ttl` gets no series for it.
 
 The exporter writes a metric only for a field that the feed holds. A system
 without docks gets no `gbfs_station_docks_available`. A feed that omits

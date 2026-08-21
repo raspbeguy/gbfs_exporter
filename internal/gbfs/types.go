@@ -170,16 +170,28 @@ func (l *FeedList) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
+// FeedHeader is the common header that every GBFS feed file carries.
+//
+// The specification makes last_updated required, but a feed in the wild can
+// still omit it. A zero LastUpdated and a nil TTL both mean "the feed gave no
+// value", and the exporter writes no metric for either.
+type FeedHeader struct {
+	LastUpdated Timestamp `json:"last_updated"`
+	// TTL is the number of seconds before the publisher changes the feed. A
+	// value of 0 is valid and means that the feed is always fresh.
+	TTL *int `json:"ttl"`
+}
+
 // Discovery is the content of gbfs.json.
 type Discovery struct {
-	LastUpdated Timestamp `json:"last_updated"`
-	TTL         int       `json:"ttl"`
-	Version     string    `json:"version"`
-	Data        FeedList  `json:"data"`
+	FeedHeader
+	Version string   `json:"version"`
+	Data    FeedList `json:"data"`
 }
 
 // SystemInformation is the content of system_information.json.
 type SystemInformation struct {
+	FeedHeader
 	Data struct {
 		SystemID string `json:"system_id"`
 		Name     Text   `json:"name"`
@@ -198,6 +210,7 @@ type Station struct {
 
 // StationInformation is the content of station_information.json.
 type StationInformation struct {
+	FeedHeader
 	Data struct {
 		Stations []Station `json:"stations"`
 	} `json:"data"`
@@ -248,6 +261,7 @@ func firstSet(values ...*Float) (float64, bool) {
 
 // StationStatusFeed is the content of station_status.json.
 type StationStatusFeed struct {
+	FeedHeader
 	Data struct {
 		Stations []StationStatus `json:"stations"`
 	} `json:"data"`
@@ -266,6 +280,7 @@ type Vehicle struct {
 // VehicleStatusFeed is the content of vehicle_status.json in GBFS 3.0 and of
 // free_bike_status.json in GBFS 2.x.
 type VehicleStatusFeed struct {
+	FeedHeader
 	Data struct {
 		Bikes    []Vehicle `json:"bikes"`
 		Vehicles []Vehicle `json:"vehicles"`
@@ -294,6 +309,7 @@ type VehicleType struct {
 
 // VehicleTypesFeed is the content of vehicle_types.json.
 type VehicleTypesFeed struct {
+	FeedHeader
 	Data struct {
 		VehicleTypes []VehicleType `json:"vehicle_types"`
 	} `json:"data"`
