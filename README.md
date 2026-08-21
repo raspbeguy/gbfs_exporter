@@ -395,13 +395,18 @@ Scrape the exporter itself with a second, plain job:
 
 ## Grafana dashboard
 
-The folder `grafana/` holds a dashboard.
+The folder `grafana/` holds two dashboards.
 
-To import it by hand, follow these steps:
+| File | Content |
+| --- | --- |
+| `gbfs-dashboard.json` | One system at a time: totals, feed health, and a table of every station. |
+| `gbfs-stations-dashboard.json` | One panel per station, showing occupancy over time. |
+
+To import one by hand, follow these steps:
 
 1. Open Grafana.
 2. Select **Dashboards**, then **New**, then **Import**.
-3. Upload `grafana/gbfs-dashboard.json`.
+3. Upload the file.
 4. Select your Prometheus data source.
 
 To install it with provisioning, follow these steps:
@@ -411,8 +416,17 @@ To install it with provisioning, follow these steps:
    `/etc/grafana/provisioning/dashboards/gbfs.yml`.
 3. Restart Grafana.
 
-The dashboard has two variables. **Data source** selects the Prometheus server.
-**System** selects one or more systems, and it accepts several values at once.
+Both dashboards have a **Data source** variable and a **System** variable. The
+System dropdown shows the name that the operator publishes, and it takes one
+value.
+
+The station dashboard adds a **Station** variable that takes several values,
+and it draws one panel per station. The graph stacks the vehicles that a rider
+can take on the docks that accept a vehicle, so the height of the stack is the
+usable size of the station and the split is its occupancy.
+
+Do not select every station of a large system. The dashboard draws one panel
+per station, and Oslo publishes 268 of them.
 
 The dashboard holds four rows:
 
