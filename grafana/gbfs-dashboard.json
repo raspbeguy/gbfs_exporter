@@ -39,27 +39,42 @@
         "type": "prometheus",
         "uid": "${datasource}"
       },
-      "description": "Number of systems that the exporter cannot read in full.",
+      "description": "UP when the exporter read every feed that the system publishes.",
       "fieldConfig": {
         "defaults": {
           "color": {
             "mode": "thresholds"
           },
-          "mappings": [],
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "color": "red",
+                  "index": 1,
+                  "text": "DOWN"
+                },
+                "1": {
+                  "color": "green",
+                  "index": 0,
+                  "text": "UP"
+                }
+              }
+            }
+          ],
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "red",
                 "value": null
               },
               {
-                "color": "red",
+                "color": "green",
                 "value": 1
               }
             ]
-          },
-          "unit": "short"
+          }
         },
         "overrides": []
       },
@@ -91,13 +106,13 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "count(gbfs_up{system=~\"$system\"} == 0) or vector(0)",
+          "expr": "gbfs_up{system=~\"$system\"}",
           "instant": true,
           "range": false,
           "refId": "A"
         }
       ],
-      "title": "Systems down",
+      "title": "System",
       "type": "stat"
     },
     {
@@ -105,7 +120,7 @@
         "type": "prometheus",
         "uid": "${datasource}"
       },
-      "description": "Stations across the selected systems.",
+      "description": "Stations of the selected system.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -542,10 +557,10 @@
           "instant": false,
           "range": true,
           "refId": "A",
-          "legendFormat": "{{system}}"
+          "legendFormat": "available"
         }
       ],
-      "title": "Vehicles available by system",
+      "title": "Vehicles available over time",
       "type": "timeseries"
     },
     {
@@ -640,10 +655,10 @@
           "instant": false,
           "range": true,
           "refId": "A",
-          "legendFormat": "{{system}}"
+          "legendFormat": "available"
         }
       ],
-      "title": "Docks available by system",
+      "title": "Docks available over time",
       "type": "timeseries"
     },
     {
@@ -738,7 +753,7 @@
           "instant": false,
           "range": true,
           "refId": "A",
-          "legendFormat": "{{system}} {{state}}"
+          "legendFormat": "{{state}}, docked {{docked}}"
         }
       ],
       "title": "Vehicles in the vehicle feed",
@@ -836,7 +851,7 @@
           "instant": false,
           "range": true,
           "refId": "A",
-          "legendFormat": "{{system}} empty"
+          "legendFormat": "empty"
         },
         {
           "datasource": {
@@ -848,7 +863,7 @@
           "instant": false,
           "range": true,
           "refId": "B",
-          "legendFormat": "{{system}} full"
+          "legendFormat": "full"
         }
       ],
       "title": "Empty and full stations",
@@ -1183,7 +1198,7 @@
         "type": "prometheus",
         "uid": "${datasource}"
       },
-      "description": "A system reads UP when the exporter read every feed of that system.",
+      "description": "The overall state of the system, and the state of each feed. A feed that the system does not publish gets no row.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1262,7 +1277,19 @@
           "instant": false,
           "range": true,
           "refId": "A",
-          "legendFormat": "{{system}}"
+          "legendFormat": "overall"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "gbfs_feed_up{system=~\"$system\"}",
+          "instant": false,
+          "range": true,
+          "refId": "B",
+          "legendFormat": "{{feed}}"
         }
       ],
       "title": "Feed state",
@@ -1273,7 +1300,7 @@
         "type": "prometheus",
         "uid": "${datasource}"
       },
-      "description": "Metadata that each system publishes.",
+      "description": "Metadata that the system publishes.",
       "fieldConfig": {
         "defaults": {
           "custom": {
@@ -1329,7 +1356,7 @@
           "format": "table"
         }
       ],
-      "title": "Systems",
+      "title": "System information",
       "transformations": [
         {
           "id": "organize",
