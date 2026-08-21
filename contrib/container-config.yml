@@ -1,0 +1,12 @@
+# Default configuration inside the container image.
+#
+# It holds the smallest set that lets the exporter start. Mount your own file
+# over /etc/gbfs_exporter/config.yml to set allowed_hosts and the modules of
+# your operators.
+#
+# allowed_hosts is not set here, so this configuration accepts every host as a
+# target. The exporter warns about that at start. Set the list before you open
+# the port to anyone you do not trust.
+
+modules:
+  default: {}

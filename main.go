@@ -34,7 +34,7 @@ import (
 
 // version is the build version. The release workflow overrides it with
 // -ldflags "-X main.version=...".
-var version = "0.1.0"
+var version = "dev"
 
 // rejected counts the requests that the exporter refused. Such a request
 // carries no metrics body, so Prometheus sees only that the scrape failed and
@@ -101,6 +101,12 @@ func main() {
 	}
 	if *listenAddress != "" {
 		config.ListenAddress = *listenAddress
+	}
+
+	if len(config.AllowedHosts) == 0 {
+		log.Warn("allowed_hosts is empty, so the exporter accepts every host as a target. " +
+			"A caller who reaches this port can read any address that the exporter can reach. " +
+			"Set allowed_hosts, or keep the port closed to untrusted callers.")
 	}
 
 	client := gbfs.NewClient(config.RequestTimeout, config.UserAgent)

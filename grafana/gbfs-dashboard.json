@@ -1420,21 +1420,20 @@
               "Value": true,
               "__name__": true,
               "instance": true,
-              "job": true
+              "job": true,
+              "system": true
             },
             "indexByName": {
-              "system": 0,
-              "name": 1,
-              "version": 2,
-              "timezone": 3,
-              "system_id": 4
+              "system_name": 0,
+              "system_id": 1,
+              "gbfs_version": 2,
+              "timezone": 3
             },
             "renameByName": {
-              "system": "System",
-              "name": "Name",
-              "version": "GBFS",
-              "timezone": "Time zone",
-              "system_id": "System ID"
+              "system_name": "Name",
+              "system_id": "System ID",
+              "gbfs_version": "GBFS",
+              "timezone": "Time zone"
             }
           }
         }

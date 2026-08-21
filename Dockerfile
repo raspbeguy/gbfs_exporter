@@ -15,6 +15,10 @@ RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
 
 FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=build /out/gbfs_exporter /gbfs_exporter
+# A default configuration so that the image starts without a mount. It sets no
+# allowed_hosts, so the exporter warns at start. Mount your own file over this
+# path for a real deployment.
+COPY contrib/container-config.yml /etc/gbfs_exporter/config.yml
 EXPOSE 9718
 USER nonroot:nonroot
 ENTRYPOINT ["/gbfs_exporter"]

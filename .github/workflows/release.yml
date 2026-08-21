@@ -10,6 +10,10 @@ permissions:
 jobs:
   binaries:
     name: Publish the binaries
+    # The release notes point the reader at the container image, so the image
+    # goes out first. A failed image build then leaves no release behind that
+    # advertises an image nobody can pull.
+    needs: image
     runs-on: ubuntu-latest
     permissions:
       # GoReleaser creates the GitHub release and uploads the archives.
@@ -34,8 +38,6 @@ jobs:
 
   image:
     name: Publish the container image
-    # The image goes out only after the release itself succeeds.
-    needs: binaries
     runs-on: ubuntu-latest
     permissions:
       contents: read

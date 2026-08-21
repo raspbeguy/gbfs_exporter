@@ -16,7 +16,7 @@ request_timeout: 10s
 
 # User agent that the exporter sends. Some operators ask for a contact
 # address.
-user_agent: "gbfs_exporter/0.1.0 (+https://example.org/contact)"
+user_agent: "gbfs_exporter (+https://example.org/contact)"
 
 # Hosts that the exporter accepts as a target. An empty list accepts every
 # host, which lets any caller reach any address that the exporter can reach.
@@ -25,6 +25,7 @@ allowed_hosts:
   - gbfs.urbansharing.com
   - api.entur.io
   - gbfs.lyft.com
+  - gbfs.nextbike.net
 
 # Number of scrapes that run at the same time. A scrape above the limit gets
 # HTTP 503.

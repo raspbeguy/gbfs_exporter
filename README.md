@@ -47,6 +47,19 @@ to a manifest list, so Docker pulls the `linux/amd64` image or the
 docker pull ghcr.io/raspbeguy/gbfs_exporter:latest
 ```
 
+The image holds a default configuration that lets it start, and that
+configuration sets no `allowed_hosts`. Mount your own file for a real
+deployment:
+
+```
+docker run -p 9718:9718 \
+  -v "$PWD/config.yml:/etc/gbfs_exporter/config.yml:ro" \
+  ghcr.io/raspbeguy/gbfs_exporter:latest
+```
+
+The container runs as `nonroot`, uid 65532, so the file must be readable by
+that user.
+
 ### Binary
 
 Each release carries an archive for linux, macOS, and FreeBSD, on amd64 and on
@@ -57,8 +70,8 @@ verify it against `checksums.txt`:
 sha256sum -c checksums.txt --ignore-missing
 ```
 
-The archive holds the binary, the example configuration, and the Grafana
-dashboard.
+The archive holds the binary, `README.md`, `LICENSE`, the example
+configuration, and the `grafana/` folder.
 
 ## Build
 
@@ -199,13 +212,13 @@ nextbike cities all live on `gbfs.nextbike.net`.
 
 ## Metrics
 
-Every metric is a gauge. Every metric carries the `system` label, which holds
-the `name` parameter of the request, or the host of the target.
+Every metric is a gauge. The exporter sets no `system` label. Prometheus sets
+that label on each target, as the scrape configuration below shows.
 
 One scrape returns the metrics of one system. Prometheus adds the `instance`
 label, which holds the URL of the feed.
 
-| Metric | Extra labels | Meaning |
+| Metric | Labels | Meaning |
 | --- | --- | --- |
 | `gbfs_up` | | 1 if the exporter read every feed that the system publishes, 0 if any feed or the discovery file failed. |
 | `gbfs_feed_up` | `feed` | 1 if the exporter read this feed, 0 if it failed. |
@@ -241,8 +254,8 @@ A feed that fails does not remove the feeds that answered. The exporter sets
 not on a metric that disappears.
 
 A failure of the auto-discovery file also sets `gbfs_up` to 0. In that case the
-exporter read no feed at all, so it publishes only
-`gbfs_feed_up{feed="gbfs"} 0`.
+exporter read no feed at all, so it publishes only the discovery feed:
+`gbfs_feed_up{feed="gbfs"} 0` and its duration.
 
 `gbfs_up` is one bit for the whole system. To find the feed that failed, use
 `gbfs_feed_up`. The `feed` label holds one of these names:
@@ -302,7 +315,8 @@ field that the others report. To measure the coverage, compare the count of
 station series with the station count:
 
 ```promql
-count by (system) (gbfs_station_docks_available) / gbfs_system_stations
+count by (system) (gbfs_station_docks_available)
+  / sum by (system) (gbfs_system_stations)
 ```
 
 GBFS 3.0 gives a name in several languages. The exporter keeps the English
@@ -367,6 +381,8 @@ For an operator that needs a module, add the `module` parameter to the job:
 
 ```yaml
   - job_name: gbfs_entur
+    scrape_interval: 60s
+    scrape_timeout: 45s
     metrics_path: /probe
     params:
       module: [entur]
@@ -393,7 +409,7 @@ Scrape the exporter itself with a second, plain job:
       - targets: ["localhost:9718"]
 ```
 
-## Grafana dashboard
+## Grafana dashboards
 
 The folder `grafana/` holds two dashboards.
 
@@ -411,7 +427,7 @@ To import one by hand, follow these steps:
 
 To install it with provisioning, follow these steps:
 
-1. Copy `grafana/gbfs-dashboard.json` to `/var/lib/grafana/dashboards/`.
+1. Copy every dashboard of `grafana/` to `/var/lib/grafana/dashboards/`.
 2. Copy `grafana/provisioning-dashboard.yml` to
    `/etc/grafana/provisioning/dashboards/gbfs.yml`.
 3. Restart Grafana.
@@ -430,17 +446,18 @@ hold a rentable vehicle nor accept one.
 Do not select every station of a large system. The dashboard draws one panel
 per station, and Oslo publishes 268 of them.
 
-The dashboard holds four rows:
+The system dashboard holds four rows:
 
 | Row | Content |
 | --- | --- |
-| Overview | Systems down, station count, vehicle count, dock count, and fill rate. |
-| Availability | Vehicles and docks over time, free-floating vehicles by state, and the count of empty and full stations. |
-| Stations | A map of every station, and a table of the twenty emptiest stations. |
-| Feed health | The state of each feed over time, and the metadata of each system. |
+| Overview | The state of the system, the station count, the vehicle and dock counts, and the fill rate. |
+| Availability | Vehicles and docks over time, the vehicle feed broken out by state and by `docked`, and the count of empty and full stations. |
+| Stations | A map of every station, and a sortable table of every station with its vehicles and free docks. |
+| Feed health | The overall state and the state of each feed over time, and the metadata of the system. |
 
-The map and the table join `gbfs_station_info` to get the station name and the
-position. The dashboard needs Grafana 10 or higher for the map panel.
+The map and the table join `gbfs_station_info`. The map takes the position from
+it, and the table takes the name. The dashboard needs Grafana 10 or higher for
+the map panel.
 
 ### The map opens too far out
 

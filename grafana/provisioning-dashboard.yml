@@ -1,6 +1,7 @@
 # Grafana dashboard provisioning. Copy this file to
-# /etc/grafana/provisioning/dashboards/gbfs.yml and copy
-# gbfs-dashboard.json to /var/lib/grafana/dashboards/.
+# /etc/grafana/provisioning/dashboards/gbfs.yml and copy every dashboard of
+# the grafana/ folder to /var/lib/grafana/dashboards/. The provider reads the
+# whole folder.
 apiVersion: 1
 
 providers:

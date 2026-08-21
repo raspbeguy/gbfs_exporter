@@ -85,10 +85,10 @@ jobs:
           version: "~> v2"
           args: check
 
-      # A snapshot build proves that the release path works before a tag
-      # reaches the release workflow.
-      - name: Build a snapshot
+      # A full snapshot release proves the whole path, including the archives and
+      # the changelog templates, before a tag reaches the release workflow.
+      - name: Build a snapshot release
         uses: goreleaser/goreleaser-action@v6
         with:
           version: "~> v2"
-          args: build --snapshot --clean --single-target
+          args: release --snapshot --clean --skip=publish,announce
