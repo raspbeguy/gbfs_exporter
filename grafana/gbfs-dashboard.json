@@ -1385,25 +1385,16 @@
         "type": "datasource"
       },
       {
-        "allValue": ".*",
-        "current": {
-          "selected": true,
-          "text": [
-            "All"
-          ],
-          "value": [
-            "$__all"
-          ]
-        },
+        "current": {},
         "datasource": {
           "type": "prometheus",
           "uid": "${datasource}"
         },
         "definition": "label_values(gbfs_up, system)",
         "hide": 0,
-        "includeAll": true,
+        "includeAll": false,
         "label": "System",
-        "multi": true,
+        "multi": false,
         "name": "system",
         "options": [],
         "query": {
