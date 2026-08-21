@@ -11,8 +11,9 @@ The exporter reads GBFS 2.x and GBFS 3.0. It finds the version from the
 auto-discovery file and adapts to the field names of that version.
 
 The exporter follows the multi-target pattern of `blackbox_exporter`. One
-scrape reads one system, and the query string names it. Prometheus holds the
-list of systems, so a new system needs no restart of the exporter.
+scrape of `/probe` reads one system, and the query string names it. Prometheus
+holds the list of systems, so a new system needs no restart of the exporter.
+`/metrics` reports on the exporter itself.
 
 ## Warning
 
@@ -155,27 +156,45 @@ These endpoints are available:
 
 | Path | Content |
 | --- | --- |
-| `/metrics` | The metrics of the one system that `target` names. |
+| `/probe` | The metrics of the one system that `target` names. |
+| `/metrics` | The metrics of the exporter itself. |
 | `/healthz` | The text `ok`. |
 | `/` | A short landing page. |
 
-`/metrics` accepts these query parameters:
+`/probe` accepts these query parameters:
 
 | Parameter | Meaning |
 | --- | --- |
 | `target` | The URL of the auto-discovery file. This parameter is necessary. |
 | `module` | The module of the operator. The default is the module called `default`. |
-| `name` | The value of the `system` label. The default is the host of the target. |
 
 Example:
 
 ```
-curl 'http://localhost:9718/metrics?target=https://gbfs.urbansharing.com/oslobysykkel.no/gbfs.json&name=oslo'
+curl 'http://localhost:9718/probe?target=https://gbfs.urbansharing.com/oslobysykkel.no/gbfs.json'
 ```
 
-The exporter serves no metric about itself. `/metrics` returns GBFS data only,
-because the exporter serves one endpoint. Watch the exporter with the `up`
-metric and the `scrape_duration_seconds` metric of Prometheus.
+`/probe` and `/metrics` are separate, the layout that `blackbox_exporter` and
+`snmp_exporter` use. A scrape of one system must not carry the runtime metrics
+of the exporter, because they would repeat under the `instance` label of every
+target. `/metrics` holds these:
+
+| Metric | Meaning |
+| --- | --- |
+| `gbfs_exporter_build_info` | The version, the revision, and the Go version of the build. |
+| `gbfs_exporter_requests_rejected_total` | Requests that the exporter refused, by `reason`. |
+| `go_*`, `process_*` | Goroutines, memory, and file descriptors. |
+
+The `reason` label is `bad_target`, `forbidden_host`, `unknown_module`, or
+`too_many_in_flight`. A refused request carries no metrics body, so Prometheus
+sees only that the scrape failed. This counter says why.
+
+### The system label
+
+The exporter sets no `system` label. The person who runs Prometheus names each
+target, which is where a target label belongs. Two systems of one operator
+often share a host, so a name taken from the URL would merge them: four
+nextbike cities all live on `gbfs.nextbike.net`.
 
 
 ## Metrics
@@ -310,19 +329,20 @@ not add `gbfs_vehicles` to `gbfs_station_vehicles_available`.
 
 ## Prometheus configuration
 
-Prometheus holds the list of systems. A relabel rule moves each target into
-the `target` parameter.
+Prometheus holds the list of systems. A relabel rule moves each target into the
+`target` parameter, and a label on each target carries the system name.
 
 ```yaml
 scrape_configs:
   - job_name: gbfs
     scrape_interval: 60s
     scrape_timeout: 45s
-    metrics_path: /metrics
+    metrics_path: /probe
     static_configs:
-      - targets:
-          - https://gbfs.urbansharing.com/oslobysykkel.no/gbfs.json
-          - https://gbfs.lyft.com/gbfs/2.3/bkn/gbfs.json
+      - targets: [https://gbfs.urbansharing.com/oslobysykkel.no/gbfs.json]
+        labels: {system: oslo}
+      - targets: [https://gbfs.nextbike.net/maps/gbfs/v2/nextbike_ae/gbfs.json]
+        labels: {system: velhop}
     relabel_configs:
       - source_labels: [__address__]
         target_label: __param_target
@@ -332,30 +352,21 @@ scrape_configs:
         replacement: localhost:9718
 ```
 
-The `system` label falls back to the host of the target. Two systems of one
-operator therefore share a label value. Give each target its own `name` with a
-second job, or with a label in the target list:
-
-```yaml
-    static_configs:
-      - targets: [https://gbfs.urbansharing.com/oslobysykkel.no/gbfs.json]
-        labels: {name: oslo}
-    relabel_configs:
-      - source_labels: [name]
-        target_label: __param_name
-      - regex: name
-        action: labeldrop
-```
+Set the `system` label on every target. The exporter does not set it, so a
+target without the label gets no `system` at all. Two systems of one operator
+often share a host, so a name taken from the URL would merge them: four
+nextbike cities all live on `gbfs.nextbike.net`.
 
 For an operator that needs a module, add the `module` parameter to the job:
 
 ```yaml
   - job_name: gbfs_entur
-    metrics_path: /metrics
+    metrics_path: /probe
     params:
       module: [entur]
     static_configs:
       - targets: [https://api.entur.io/mobility/v2/gbfs/v3/trondheimbysykkel/gbfs]
+        labels: {system: trondheim}
     relabel_configs:
       - source_labels: [__address__]
         target_label: __param_target
@@ -368,6 +379,13 @@ For an operator that needs a module, add the `module` parameter to the job:
 Swap `static_configs` for `file_sd_configs` to change the list without a
 restart of Prometheus.
 
+Scrape the exporter itself with a second, plain job:
+
+```yaml
+  - job_name: gbfs_exporter
+    static_configs:
+      - targets: ["localhost:9718"]
+```
 
 ## Grafana dashboard
 

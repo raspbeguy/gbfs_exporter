@@ -12,6 +12,12 @@ import (
 
 	"log/slog"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/collectors"
+	versioncollector "github.com/prometheus/client_golang/prometheus/collectors/version"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/prometheus/client_golang/prometheus/testutil"
+
 	"github.com/raspbeguy/gbfs_exporter/internal/gbfs"
 )
 
@@ -70,7 +76,7 @@ func newHandler(t *testing.T, config *Config) http.HandlerFunc {
 		config.MaxInFlight = 4
 	}
 	client := gbfs.NewClient(5*time.Second, "gbfs_exporter/test")
-	return metricsHandler(client, config, slog.New(slog.DiscardHandler))
+	return probeHandler(client, config, slog.New(slog.DiscardHandler))
 }
 
 func get(t *testing.T, handler http.HandlerFunc, target string) *httptest.ResponseRecorder {
@@ -90,10 +96,10 @@ func TestMetricsHandlerRejects(t *testing.T) {
 		status int
 		body   string
 	}{
-		{"no target", "/metrics", http.StatusBadRequest, "target parameter is missing"},
-		{"not http", "/metrics?target=ftp://example.org/gbfs.json", http.StatusBadRequest, "must be an http or https URL"},
-		{"host not allowed", "/metrics?target=https://example.org/gbfs.json", http.StatusForbidden, "not in allowed_hosts"},
-		{"unknown module", "/metrics?target=" + server.URL + "/gbfs.json&module=absent", http.StatusBadRequest, "no module"},
+		{"no target", "/probe", http.StatusBadRequest, "target parameter is missing"},
+		{"not http", "/probe?target=ftp://example.org/gbfs.json", http.StatusBadRequest, "must be an http or https URL"},
+		{"host not allowed", "/probe?target=https://example.org/gbfs.json", http.StatusForbidden, "not in allowed_hosts"},
+		{"unknown module", "/probe?target=" + server.URL + "/gbfs.json&module=absent", http.StatusBadRequest, "no module"},
 	}
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {
@@ -113,7 +119,7 @@ func TestMetricsHandlerRejects(t *testing.T) {
 func TestMetricsHandlerEmptyAllowedHostsAcceptsEveryHost(t *testing.T) {
 	server, _ := fakeSystem(t, 0)
 	handler := newHandler(t, &Config{})
-	recorder := get(t, handler, "/metrics?target="+server.URL+"/gbfs.json")
+	recorder := get(t, handler, "/probe?target="+server.URL+"/gbfs.json")
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("got status %d, want 200", recorder.Code)
 	}
@@ -123,14 +129,14 @@ func TestMetricsHandlerReadsTheTarget(t *testing.T) {
 	server, _ := fakeSystem(t, 0)
 	handler := newHandler(t, &Config{})
 
-	recorder := get(t, handler, "/metrics?target="+server.URL+"/gbfs.json&name=demo")
+	recorder := get(t, handler, "/probe?target="+server.URL+"/gbfs.json")
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("got status %d, want 200", recorder.Code)
 	}
 	body := recorder.Body.String()
 	for _, want := range []string{
-		`gbfs_up{system="demo"} 1`,
-		`gbfs_station_vehicles_available{station_id="1",system="demo"} 3`,
+		"gbfs_up 1",
+		`gbfs_station_vehicles_available{station_id="1"} 3`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("the body does not hold %q", want)
@@ -144,14 +150,15 @@ func TestMetricsHandlerReadsTheTarget(t *testing.T) {
 	}
 }
 
-// Without the name parameter, the system label holds the host of the target.
-func TestMetricsHandlerNameFallsBackToTheHost(t *testing.T) {
+// The exporter sets no system label. Prometheus owns that label, and a
+// host-derived fallback merged four nextbike cities into one value, because
+// they all live on gbfs.nextbike.net.
+func TestProbeSetsNoSystemLabel(t *testing.T) {
 	server, _ := fakeSystem(t, 0)
 	handler := newHandler(t, &Config{})
-	recorder := get(t, handler, "/metrics?target="+server.URL+"/gbfs.json")
-	host := strings.TrimPrefix(server.URL, "http://")
-	if !strings.Contains(recorder.Body.String(), `gbfs_up{system="`+host+`"} 1`) {
-		t.Fatalf("the body does not name the host %q:\n%s", host, recorder.Body.String())
+	body := get(t, handler, "/probe?target="+server.URL+"/gbfs.json").Body.String()
+	if strings.Contains(body, "system=") {
+		t.Fatalf("the body carries a system label:\n%s", body)
 	}
 }
 
@@ -163,7 +170,7 @@ func TestModuleSendsItsHeaders(t *testing.T) {
 		"entur": {Headers: map[string]string{"ET-Client-Name": "test-client"}},
 	}})
 
-	if recorder := get(t, handler, "/metrics?target="+server.URL+"/gbfs.json&module=entur"); recorder.Code != http.StatusOK {
+	if recorder := get(t, handler, "/probe?target="+server.URL+"/gbfs.json&module=entur"); recorder.Code != http.StatusOK {
 		t.Fatalf("got status %d, want 200", recorder.Code)
 	}
 	seen := headers()
@@ -184,11 +191,11 @@ func TestModuleControlsPerVehicleType(t *testing.T) {
 		"pertype": {PerVehicleType: true},
 	}})
 
-	withType := get(t, handler, "/metrics?target="+server.URL+"/gbfs.json&module=pertype").Body.String()
+	withType := get(t, handler, "/probe?target="+server.URL+"/gbfs.json&module=pertype").Body.String()
 	if !strings.Contains(withType, "gbfs_station_type_vehicles_available") {
 		t.Error("the pertype module gives no per-type metric")
 	}
-	plain := get(t, handler, "/metrics?target="+server.URL+"/gbfs.json").Body.String()
+	plain := get(t, handler, "/probe?target="+server.URL+"/gbfs.json").Body.String()
 	if strings.Contains(plain, "gbfs_station_type_vehicles_available") {
 		t.Error("the default module gives a per-type metric")
 	}
@@ -199,7 +206,7 @@ func TestModuleControlsPerVehicleType(t *testing.T) {
 func TestMaxInFlightRejectsTheExtraScrape(t *testing.T) {
 	server, _ := fakeSystem(t, 300*time.Millisecond)
 	handler := newHandler(t, &Config{MaxInFlight: 1})
-	url := "/metrics?target=" + server.URL + "/gbfs.json"
+	url := "/probe?target=" + server.URL + "/gbfs.json"
 
 	var wait sync.WaitGroup
 	codes := make([]int, 4)
@@ -318,5 +325,76 @@ modules:
 	}
 	if len(config.AllowedHosts) != 1 || config.MaxInFlight != 2 {
 		t.Fatalf("the top level settings are %+v", config)
+	}
+}
+
+// TestEndpointsAreSeparate checks the split that every established
+// multi-target exporter uses. A scrape of one target must not carry the
+// runtime metrics of the exporter, because they would repeat under the
+// instance label of every target.
+func TestEndpointsAreSeparate(t *testing.T) {
+	server, _ := fakeSystem(t, 0)
+	config := &Config{}
+	probe := newHandler(t, config)
+
+	self := prometheus.NewRegistry()
+	self.MustRegister(
+		collectors.NewGoCollector(),
+		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
+		versioncollector.NewCollector("gbfs_exporter"),
+		rejected,
+	)
+	selfHandler := promhttp.HandlerFor(self, promhttp.HandlerOpts{})
+
+	t.Run("the target endpoint carries no process metric", func(t *testing.T) {
+		body := get(t, probe, "/probe?target="+server.URL+"/gbfs.json").Body.String()
+		if !strings.Contains(body, "gbfs_up 1") {
+			t.Fatalf("the target endpoint gives no GBFS data:\n%s", body)
+		}
+		for _, absent := range []string{"go_goroutines", "process_cpu_seconds_total", "gbfs_exporter_build_info"} {
+			if strings.Contains(body, absent) {
+				t.Errorf("the target endpoint carries %q", absent)
+			}
+		}
+	})
+
+	t.Run("the self endpoint carries no GBFS data", func(t *testing.T) {
+		recorder := httptest.NewRecorder()
+		selfHandler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+		body := recorder.Body.String()
+		for _, want := range []string{"go_goroutines", "gbfs_exporter_build_info"} {
+			if !strings.Contains(body, want) {
+				t.Errorf("the self endpoint does not carry %q", want)
+			}
+		}
+		for _, absent := range []string{"gbfs_station_", "gbfs_up ", "gbfs_feed_"} {
+			if strings.Contains(body, absent) {
+				t.Errorf("the self endpoint carries %q", absent)
+			}
+		}
+	})
+}
+
+// TestRejectedRequestsAreCounted checks that a refused request leaves a trace.
+// Such a request carries no metrics body, so Prometheus sees only that the
+// scrape failed and never why.
+func TestRejectedRequestsAreCounted(t *testing.T) {
+	rejected.Reset()
+	server, _ := fakeSystem(t, 0)
+	handler := newHandler(t, &Config{
+		AllowedHosts: []string{"127.0.0.1"},
+		Modules:      map[string]Module{"known": {}},
+	})
+
+	get(t, handler, "/probe")
+	get(t, handler, "/probe?target=https://elsewhere.example.org/gbfs.json")
+	get(t, handler, "/probe?target="+server.URL+"/gbfs.json&module=absent")
+
+	for reason, want := range map[string]float64{
+		"bad_target": 1, "forbidden_host": 1, "unknown_module": 1,
+	} {
+		if got := testutil.ToFloat64(rejected.WithLabelValues(reason)); got != want {
+			t.Errorf("reason %q counted %v, want %v", reason, got, want)
+		}
 	}
 }

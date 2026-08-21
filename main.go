@@ -22,7 +22,10 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/collectors"
+	versioncollector "github.com/prometheus/client_golang/prometheus/collectors/version"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	commonversion "github.com/prometheus/common/version"
 	"gopkg.in/yaml.v3"
 
 	"github.com/raspbeguy/gbfs_exporter/internal/collector"
@@ -32,6 +35,15 @@ import (
 // version is the build version. The release workflow overrides it with
 // -ldflags "-X main.version=...".
 var version = "0.1.0"
+
+// rejected counts the requests that the exporter refused. Such a request
+// carries no metrics body, so Prometheus sees only that the scrape failed and
+// never why. The counter lives on the self endpoint, because it counts the
+// work of the exporter and not the state of one target.
+var rejected = prometheus.NewCounterVec(prometheus.CounterOpts{
+	Name: "gbfs_exporter_requests_rejected_total",
+	Help: "Requests that the exporter refused, by reason.",
+}, []string{"reason"})
 
 // Config is the content of the configuration file. It holds no target. The
 // target arrives in the query string of each scrape.
@@ -93,8 +105,29 @@ func main() {
 
 	client := gbfs.NewClient(config.RequestTimeout, config.UserAgent)
 
+	// The target endpoint and the self endpoint are separate, the layout that
+	// blackbox_exporter and snmp_exporter use. A scrape of one system must
+	// not carry the runtime metrics of the exporter, because they would
+	// repeat under the instance label of every target.
+	// versioncollector reads the common version package, and the release
+	// workflow writes main.version. Copy it across so that
+	// gbfs_exporter_build_info reports the real build.
+	commonversion.Version = version
+
+	self := prometheus.NewRegistry()
+	self.MustRegister(
+		collectors.NewGoCollector(),
+		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
+		versioncollector.NewCollector("gbfs_exporter"),
+		rejected,
+	)
+
 	mux := http.NewServeMux()
-	mux.HandleFunc("/metrics", metricsHandler(client, config, log))
+	mux.HandleFunc("/probe", probeHandler(client, config, log))
+	mux.Handle("/metrics", promhttp.HandlerFor(self, promhttp.HandlerOpts{
+		ErrorHandling: promhttp.ContinueOnError,
+		Registry:      self,
+	}))
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte("ok\n"))
 	})
@@ -124,15 +157,16 @@ func main() {
 	_ = server.Shutdown(shutdownCtx)
 }
 
-// metricsHandler reads the one system that the query string names.
+// probeHandler reads the one system that the query string names.
 //
 // The endpoint follows the multi-target pattern of blackbox_exporter. The
-// query parameters are target, module, and name. The configuration file holds
-// no target, so Prometheus owns the list of systems.
+// query parameters are target and module. The configuration file holds no
+// target, so Prometheus owns the list of systems, and the person who runs
+// Prometheus sets the system label on the target.
 //
 // The endpoint fetches the URL that the caller gives. Set allowed_hosts, or
 // keep the port closed to untrusted callers.
-func metricsHandler(client *gbfs.Client, config *Config, log *slog.Logger) http.HandlerFunc {
+func probeHandler(client *gbfs.Client, config *Config, log *slog.Logger) http.HandlerFunc {
 	allowed := make(map[string]bool, len(config.AllowedHosts))
 	for _, host := range config.AllowedHosts {
 		allowed[strings.ToLower(host)] = true
@@ -144,15 +178,18 @@ func metricsHandler(client *gbfs.Client, config *Config, log *slog.Logger) http.
 	return func(w http.ResponseWriter, r *http.Request) {
 		target := r.URL.Query().Get("target")
 		if target == "" {
+			rejected.WithLabelValues("bad_target").Inc()
 			http.Error(w, "the target parameter is missing", http.StatusBadRequest)
 			return
 		}
 		parsed, err := url.Parse(target)
 		if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+			rejected.WithLabelValues("bad_target").Inc()
 			http.Error(w, "the target parameter must be an http or https URL", http.StatusBadRequest)
 			return
 		}
 		if len(allowed) > 0 && !allowed[strings.ToLower(parsed.Hostname())] {
+			rejected.WithLabelValues("forbidden_host").Inc()
 			log.Warn("the target is not in allowed_hosts", "host", parsed.Hostname())
 			http.Error(w, "the host of the target is not in allowed_hosts", http.StatusForbidden)
 			return
@@ -160,34 +197,33 @@ func metricsHandler(client *gbfs.Client, config *Config, log *slog.Logger) http.
 
 		module, err := selectModule(config.Modules, r.URL.Query().Get("module"))
 		if err != nil {
+			rejected.WithLabelValues("unknown_module").Inc()
 			log.Warn("the request names a module that the configuration does not hold",
 				"module", r.URL.Query().Get("module"))
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 
-		name := r.URL.Query().Get("name")
-		if name == "" {
-			name = parsed.Host
-		}
-
 		select {
 		case inFlight <- struct{}{}:
 			defer func() { <-inFlight }()
 		default:
+			rejected.WithLabelValues("too_many_in_flight").Inc()
 			http.Error(w, "too many scrapes run at the same time", http.StatusServiceUnavailable)
 			return
 		}
 
 		system := collector.System{
-			Name:           name,
+			// Name reaches the log only. The system label belongs to
+			// Prometheus, which sets it on the target.
+			Name:           parsed.Host,
 			URL:            target,
 			PerVehicleType: module.PerVehicleType,
 			Headers:        module.Headers,
 			MaxConcurrency: module.MaxConcurrency,
 		}
 		registry := prometheus.NewRegistry()
-		single := collector.New(client, []collector.System{system}, config.Timeout, log)
+		single := collector.New(client, system, config.Timeout, log)
 		// The request context stops the outbound requests when Prometheus
 		// gives up on the scrape.
 		registry.MustRegister(single.WithContext(r.Context()))
@@ -221,8 +257,9 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
 <head><title>GBFS exporter</title></head>
 <body>
 <h1>GBFS exporter %s</h1>
-<p>Read one system with /metrics?target=&lt;URL of gbfs.json&gt;</p>
-<p>Add &amp;module=&lt;name&gt; for the settings of an operator, and &amp;name=&lt;label&gt; for the system label.</p>
+<p>Read one system with /probe?target=&lt;URL of gbfs.json&gt;</p>
+<p>Add &amp;module=&lt;name&gt; for the settings of an operator.</p>
+<p><a href="/metrics">Metrics of the exporter itself</a></p>
 </body>
 </html>
 `, version)

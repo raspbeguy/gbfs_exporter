@@ -88,7 +88,7 @@ func newCollector(t *testing.T, url string, perType bool) *collector.Collector {
 	t.Helper()
 	client := gbfs.NewClient(5*time.Second, "gbfs_exporter/test")
 	system := collector.System{Name: "demo", URL: url, PerVehicleType: perType}
-	return collector.New(client, []collector.System{system}, 5*time.Second, slog.New(slog.DiscardHandler))
+	return collector.New(client, system, 5*time.Second, slog.New(slog.DiscardHandler))
 }
 
 func TestCollectVersion2(t *testing.T) {
@@ -98,62 +98,62 @@ func TestCollectVersion2(t *testing.T) {
 	expected := `
 # HELP gbfs_vehicles Number of vehicles in the vehicle feed, docked or not. docked is true when the feed gave the vehicle a station_id.
 # TYPE gbfs_vehicles gauge
-gbfs_vehicles{docked="false",form_factor="bicycle",propulsion_type="electric_assist",state="available",system="demo",vehicle_type_id="ebike"} 1
-gbfs_vehicles{docked="false",form_factor="bicycle",propulsion_type="electric_assist",state="reserved",system="demo",vehicle_type_id="ebike"} 1
-gbfs_vehicles{docked="false",form_factor="bicycle",propulsion_type="human",state="disabled",system="demo",vehicle_type_id="bike"} 1
-gbfs_vehicles{docked="true",form_factor="bicycle",propulsion_type="human",state="available",system="demo",vehicle_type_id="bike"} 1
+gbfs_vehicles{docked="false",form_factor="bicycle",propulsion_type="electric_assist",state="available",vehicle_type_id="ebike"} 1
+gbfs_vehicles{docked="false",form_factor="bicycle",propulsion_type="electric_assist",state="reserved",vehicle_type_id="ebike"} 1
+gbfs_vehicles{docked="false",form_factor="bicycle",propulsion_type="human",state="disabled",vehicle_type_id="bike"} 1
+gbfs_vehicles{docked="true",form_factor="bicycle",propulsion_type="human",state="available",vehicle_type_id="bike"} 1
 # HELP gbfs_station_installed 1 if the station is on the street, 0 if it is not.
 # TYPE gbfs_station_installed gauge
-gbfs_station_installed{station_id="1",system="demo"} 1
-gbfs_station_installed{station_id="2",system="demo"} 1
+gbfs_station_installed{station_id="1"} 1
+gbfs_station_installed{station_id="2"} 1
 # HELP gbfs_station_renting 1 if the station gives out vehicles, 0 if it does not.
 # TYPE gbfs_station_renting gauge
-gbfs_station_renting{station_id="1",system="demo"} 1
-gbfs_station_renting{station_id="2",system="demo"} 0
+gbfs_station_renting{station_id="1"} 1
+gbfs_station_renting{station_id="2"} 0
 # HELP gbfs_station_vehicles_available Number of functional vehicles physically at the station. A rider can take one only where gbfs_station_renting is 1.
 # TYPE gbfs_station_vehicles_available gauge
-gbfs_station_vehicles_available{station_id="1",system="demo"} 3
-gbfs_station_vehicles_available{station_id="2",system="demo"} 5
+gbfs_station_vehicles_available{station_id="1"} 3
+gbfs_station_vehicles_available{station_id="2"} 5
 # HELP gbfs_station_type_vehicles_available Number of vehicles of one type at the station. A breakdown of gbfs_station_vehicles_available; never add the two.
 # TYPE gbfs_station_type_vehicles_available gauge
-gbfs_station_type_vehicles_available{form_factor="bicycle",propulsion_type="human",station_id="1",system="demo",vehicle_type_id="bike"} 2
-gbfs_station_type_vehicles_available{form_factor="bicycle",propulsion_type="electric_assist",station_id="1",system="demo",vehicle_type_id="ebike"} 1
+gbfs_station_type_vehicles_available{form_factor="bicycle",propulsion_type="human",station_id="1",vehicle_type_id="bike"} 2
+gbfs_station_type_vehicles_available{form_factor="bicycle",propulsion_type="electric_assist",station_id="1",vehicle_type_id="ebike"} 1
 # HELP gbfs_station_info Station metadata. The value is always 1.
 # TYPE gbfs_station_info gauge
-gbfs_station_info{lat="48.8",lon="2.3",station_id="1",station_name="Gare",system="demo"} 1
-gbfs_station_info{lat="48.9",lon="2.4",station_id="2",station_name="Place",system="demo"} 1
+gbfs_station_info{lat="48.8",lon="2.3",station_id="1",station_name="Gare"} 1
+gbfs_station_info{lat="48.9",lon="2.4",station_id="2",station_name="Place"} 1
 # HELP gbfs_station_capacity Total parking positions of the station: docking points for a physical station, parkable vehicles for a virtual one.
 # TYPE gbfs_station_capacity gauge
-gbfs_station_capacity{station_id="1",system="demo"} 20
+gbfs_station_capacity{station_id="1"} 20
 # HELP gbfs_system_stations Number of distinct stations across station_information and station_status.
 # TYPE gbfs_system_stations gauge
-gbfs_system_stations{system="demo"} 2
+gbfs_system_stations 2
 # HELP gbfs_system_vehicles_available Sum of gbfs_station_vehicles_available over every station. Never add it to that metric.
 # TYPE gbfs_system_vehicles_available gauge
-gbfs_system_vehicles_available{system="demo"} 8
+gbfs_system_vehicles_available 8
 # HELP gbfs_system_vehicles_disabled Sum of gbfs_station_vehicles_disabled over every station. Never add it to that metric.
 # TYPE gbfs_system_vehicles_disabled gauge
-gbfs_system_vehicles_disabled{system="demo"} 1
+gbfs_system_vehicles_disabled 1
 # HELP gbfs_system_docks_available Sum of gbfs_station_docks_available over every station. Never add it to that metric.
 # TYPE gbfs_system_docks_available gauge
-gbfs_system_docks_available{system="demo"} 16
+gbfs_system_docks_available 16
 # HELP gbfs_system_info System metadata. The value is always 1.
 # TYPE gbfs_system_info gauge
-gbfs_system_info{gbfs_version="2.3",system="demo",system_id="demo",system_name="Demo Bikes",timezone="Europe/Paris"} 1
+gbfs_system_info{gbfs_version="2.3",system_id="demo",system_name="Demo Bikes",timezone="Europe/Paris"} 1
 # HELP gbfs_up 1 if the exporter read every feed that the system publishes, 0 if any feed or the discovery document failed.
 # TYPE gbfs_up gauge
 # HELP gbfs_station_docks_available Number of docks at the station that accept a vehicle.
 # TYPE gbfs_station_docks_available gauge
-gbfs_station_docks_available{station_id="1",system="demo"} 16
-gbfs_station_docks_available{station_id="2",system="demo"} 0
+gbfs_station_docks_available{station_id="1"} 16
+gbfs_station_docks_available{station_id="2"} 0
 # HELP gbfs_station_returning 1 if the station takes back vehicles, 0 if it does not.
 # TYPE gbfs_station_returning gauge
-gbfs_station_returning{station_id="1",system="demo"} 1
-gbfs_station_returning{station_id="2",system="demo"} 1
+gbfs_station_returning{station_id="1"} 1
+gbfs_station_returning{station_id="2"} 1
 # HELP gbfs_station_vehicles_disabled Number of vehicles at the station that a rider cannot take.
 # TYPE gbfs_station_vehicles_disabled gauge
-gbfs_station_vehicles_disabled{station_id="1",system="demo"} 1
-gbfs_up{system="demo"} 1
+gbfs_station_vehicles_disabled{station_id="1"} 1
+gbfs_up 1
 `
 	names := []string{
 		"gbfs_vehicles", "gbfs_station_capacity",
@@ -178,16 +178,16 @@ func TestCollectVersion3(t *testing.T) {
 	expected := `
 # HELP gbfs_station_vehicles_available Number of functional vehicles physically at the station. A rider can take one only where gbfs_station_renting is 1.
 # TYPE gbfs_station_vehicles_available gauge
-gbfs_station_vehicles_available{station_id="1",system="demo"} 3
+gbfs_station_vehicles_available{station_id="1"} 3
 # HELP gbfs_station_info Station metadata. The value is always 1.
 # TYPE gbfs_station_info gauge
-gbfs_station_info{lat="48.8",lon="2.3",station_id="1",station_name="Gare",system="demo"} 1
+gbfs_station_info{lat="48.8",lon="2.3",station_id="1",station_name="Gare"} 1
 # HELP gbfs_system_info System metadata. The value is always 1.
 # TYPE gbfs_system_info gauge
-gbfs_system_info{gbfs_version="3.0",system="demo",system_id="demo",system_name="Demo Bikes",timezone="Europe/Paris"} 1
+gbfs_system_info{gbfs_version="3.0",system_id="demo",system_name="Demo Bikes",timezone="Europe/Paris"} 1
 # HELP gbfs_vehicles Number of vehicles in the vehicle feed, docked or not. docked is true when the feed gave the vehicle a station_id.
 # TYPE gbfs_vehicles gauge
-gbfs_vehicles{docked="false",form_factor="bicycle",propulsion_type="electric_assist",state="available",system="demo",vehicle_type_id="ebike"} 1
+gbfs_vehicles{docked="false",form_factor="bicycle",propulsion_type="electric_assist",state="available",vehicle_type_id="ebike"} 1
 `
 	names := []string{
 		"gbfs_station_vehicles_available", "gbfs_station_info",
@@ -208,10 +208,10 @@ func TestCollectReportsDownSystem(t *testing.T) {
 	expected := `
 # HELP gbfs_up 1 if the exporter read every feed that the system publishes, 0 if any feed or the discovery document failed.
 # TYPE gbfs_up gauge
-gbfs_up{system="demo"} 0
+gbfs_up 0
 # HELP gbfs_feed_up 1 if the exporter read this feed, 0 if it failed. A feed that the system does not publish gets no series.
 # TYPE gbfs_feed_up gauge
-gbfs_feed_up{feed="gbfs",system="demo"} 0
+gbfs_feed_up{feed="gbfs"} 0
 `
 	// The discovery file failed, so the exporter read no other feed and
 	// reports only the discovery feed as down.
@@ -237,14 +237,14 @@ func TestCollectKeepsFeedsThatAnswered(t *testing.T) {
 	expected := `
 # HELP gbfs_up 1 if the exporter read every feed that the system publishes, 0 if any feed or the discovery document failed.
 # TYPE gbfs_up gauge
-gbfs_up{system="demo"} 0
+gbfs_up 0
 # HELP gbfs_station_vehicles_available Number of functional vehicles physically at the station. A rider can take one only where gbfs_station_renting is 1.
 # TYPE gbfs_station_vehicles_available gauge
-gbfs_station_vehicles_available{station_id="1",system="demo"} 3
-gbfs_station_vehicles_available{station_id="2",system="demo"} 5
+gbfs_station_vehicles_available{station_id="1"} 3
+gbfs_station_vehicles_available{station_id="2"} 5
 # HELP gbfs_system_stations Number of distinct stations across station_information and station_status.
 # TYPE gbfs_system_stations gauge
-gbfs_system_stations{system="demo"} 2
+gbfs_system_stations 2
 `
 	names := []string{"gbfs_up", "gbfs_station_vehicles_available", "gbfs_system_stations"}
 	if err := testutil.CollectAndCompare(subject, strings.NewReader(expected), names...); err != nil {
@@ -267,7 +267,7 @@ func TestCollectWithoutStatusFeed(t *testing.T) {
 	expected := `
 # HELP gbfs_system_stations Number of distinct stations across station_information and station_status.
 # TYPE gbfs_system_stations gauge
-gbfs_system_stations{system="demo"} 2
+gbfs_system_stations 2
 `
 	names := []string{
 		"gbfs_system_stations", "gbfs_system_vehicles_available",
@@ -292,7 +292,7 @@ func TestCollectSkipsFlagsThatTheFeedOmits(t *testing.T) {
 	expected := `
 # HELP gbfs_station_installed 1 if the station is on the street, 0 if it is not.
 # TYPE gbfs_station_installed gauge
-gbfs_station_installed{station_id="1",system="demo"} 1
+gbfs_station_installed{station_id="1"} 1
 `
 	names := []string{"gbfs_station_installed", "gbfs_station_renting", "gbfs_station_returning"}
 	if err := testutil.CollectAndCompare(subject, strings.NewReader(expected), names...); err != nil {
@@ -313,7 +313,7 @@ func TestCollectStopsWithTheRequestContext(t *testing.T) {
 	expected := `
 # HELP gbfs_up 1 if the exporter read every feed that the system publishes, 0 if any feed or the discovery document failed.
 # TYPE gbfs_up gauge
-gbfs_up{system="demo"} 0
+gbfs_up 0
 `
 	if err := testutil.CollectAndCompare(bound, strings.NewReader(expected), "gbfs_up"); err != nil {
 		t.Error(err)
@@ -332,18 +332,18 @@ func TestCollectFeedHealth(t *testing.T) {
 	expected := `
 # HELP gbfs_feed_up 1 if the exporter read this feed, 0 if it failed. A feed that the system does not publish gets no series.
 # TYPE gbfs_feed_up gauge
-gbfs_feed_up{feed="gbfs",system="demo"} 1
-gbfs_feed_up{feed="station_information",system="demo"} 1
-gbfs_feed_up{feed="station_status",system="demo"} 1
-gbfs_feed_up{feed="system_information",system="demo"} 1
-gbfs_feed_up{feed="vehicle_status",system="demo"} 1
-gbfs_feed_up{feed="vehicle_types",system="demo"} 1
+gbfs_feed_up{feed="gbfs"} 1
+gbfs_feed_up{feed="station_information"} 1
+gbfs_feed_up{feed="station_status"} 1
+gbfs_feed_up{feed="system_information"} 1
+gbfs_feed_up{feed="vehicle_status"} 1
+gbfs_feed_up{feed="vehicle_types"} 1
 # HELP gbfs_feed_last_updated_timestamp_seconds Unix time of the last_updated header of the feed. Staleness is time() minus this value.
 # TYPE gbfs_feed_last_updated_timestamp_seconds gauge
-gbfs_feed_last_updated_timestamp_seconds{feed="gbfs",system="demo"} 1.6094592e+09
+gbfs_feed_last_updated_timestamp_seconds{feed="gbfs"} 1.6094592e+09
 # HELP gbfs_feed_ttl_seconds Seconds that the publisher says will pass before the feed changes. 0 means that the feed is always fresh.
 # TYPE gbfs_feed_ttl_seconds gauge
-gbfs_feed_ttl_seconds{feed="gbfs",system="demo"} 60
+gbfs_feed_ttl_seconds{feed="gbfs"} 60
 `
 	names := []string{
 		"gbfs_feed_up", "gbfs_feed_last_updated_timestamp_seconds",
@@ -371,15 +371,15 @@ func TestCollectFeedHealthReportsOneBrokenFeed(t *testing.T) {
 	expected := `
 # HELP gbfs_feed_up 1 if the exporter read this feed, 0 if it failed. A feed that the system does not publish gets no series.
 # TYPE gbfs_feed_up gauge
-gbfs_feed_up{feed="gbfs",system="demo"} 1
-gbfs_feed_up{feed="station_information",system="demo"} 1
-gbfs_feed_up{feed="station_status",system="demo"} 1
-gbfs_feed_up{feed="system_information",system="demo"} 1
-gbfs_feed_up{feed="vehicle_status",system="demo"} 1
-gbfs_feed_up{feed="vehicle_types",system="demo"} 0
+gbfs_feed_up{feed="gbfs"} 1
+gbfs_feed_up{feed="station_information"} 1
+gbfs_feed_up{feed="station_status"} 1
+gbfs_feed_up{feed="system_information"} 1
+gbfs_feed_up{feed="vehicle_status"} 1
+gbfs_feed_up{feed="vehicle_types"} 0
 # HELP gbfs_up 1 if the exporter read every feed that the system publishes, 0 if any feed or the discovery document failed.
 # TYPE gbfs_up gauge
-gbfs_up{system="demo"} 0
+gbfs_up 0
 `
 	if err := testutil.CollectAndCompare(subject, strings.NewReader(expected), "gbfs_feed_up", "gbfs_up"); err != nil {
 		t.Error(err)
@@ -408,8 +408,8 @@ func TestCollectVehicleTypeInfo(t *testing.T) {
 	expected := `
 # HELP gbfs_vehicle_type_info Vehicle type metadata. The value is always 1.
 # TYPE gbfs_vehicle_type_info gauge
-gbfs_vehicle_type_info{form_factor="bicycle",propulsion_type="human",system="demo",vehicle_type_id="bike",vehicle_type_name=""} 1
-gbfs_vehicle_type_info{form_factor="bicycle",propulsion_type="electric_assist",system="demo",vehicle_type_id="ebike",vehicle_type_name=""} 1
+gbfs_vehicle_type_info{form_factor="bicycle",propulsion_type="human",vehicle_type_id="bike",vehicle_type_name=""} 1
+gbfs_vehicle_type_info{form_factor="bicycle",propulsion_type="electric_assist",vehicle_type_id="ebike",vehicle_type_name=""} 1
 `
 	if err := testutil.CollectAndCompare(subject, strings.NewReader(expected), "gbfs_vehicle_type_info"); err != nil {
 		t.Error(err)
@@ -439,10 +439,10 @@ func TestVehicleTypeFallbacks(t *testing.T) {
 		expected := `
 # HELP gbfs_vehicles Number of vehicles in the vehicle feed, docked or not. docked is true when the feed gave the vehicle a station_id.
 # TYPE gbfs_vehicles gauge
-gbfs_vehicles{docked="false",form_factor="bicycle",propulsion_type="human",state="available",system="demo",vehicle_type_id="ebike"} 1
-gbfs_vehicles{docked="false",form_factor="bicycle",propulsion_type="human",state="reserved",system="demo",vehicle_type_id="ebike"} 1
-gbfs_vehicles{docked="false",form_factor="bicycle",propulsion_type="human",state="disabled",system="demo",vehicle_type_id="bike"} 1
-gbfs_vehicles{docked="true",form_factor="bicycle",propulsion_type="human",state="available",system="demo",vehicle_type_id="bike"} 1
+gbfs_vehicles{docked="false",form_factor="bicycle",propulsion_type="human",state="available",vehicle_type_id="ebike"} 1
+gbfs_vehicles{docked="false",form_factor="bicycle",propulsion_type="human",state="reserved",vehicle_type_id="ebike"} 1
+gbfs_vehicles{docked="false",form_factor="bicycle",propulsion_type="human",state="disabled",vehicle_type_id="bike"} 1
+gbfs_vehicles{docked="true",form_factor="bicycle",propulsion_type="human",state="available",vehicle_type_id="bike"} 1
 `
 		if err := testutil.CollectAndCompare(subject, strings.NewReader(expected), "gbfs_vehicles"); err != nil {
 			t.Error(err)
@@ -463,10 +463,10 @@ gbfs_vehicles{docked="true",form_factor="bicycle",propulsion_type="human",state=
 		expected := `
 # HELP gbfs_vehicles Number of vehicles in the vehicle feed, docked or not. docked is true when the feed gave the vehicle a station_id.
 # TYPE gbfs_vehicles gauge
-gbfs_vehicles{docked="false",form_factor="unknown",propulsion_type="unknown",state="available",system="demo",vehicle_type_id="ebike"} 1
-gbfs_vehicles{docked="false",form_factor="unknown",propulsion_type="unknown",state="reserved",system="demo",vehicle_type_id="ebike"} 1
-gbfs_vehicles{docked="false",form_factor="unknown",propulsion_type="unknown",state="disabled",system="demo",vehicle_type_id="bike"} 1
-gbfs_vehicles{docked="true",form_factor="unknown",propulsion_type="unknown",state="available",system="demo",vehicle_type_id="bike"} 1
+gbfs_vehicles{docked="false",form_factor="unknown",propulsion_type="unknown",state="available",vehicle_type_id="ebike"} 1
+gbfs_vehicles{docked="false",form_factor="unknown",propulsion_type="unknown",state="reserved",vehicle_type_id="ebike"} 1
+gbfs_vehicles{docked="false",form_factor="unknown",propulsion_type="unknown",state="disabled",vehicle_type_id="bike"} 1
+gbfs_vehicles{docked="true",form_factor="unknown",propulsion_type="unknown",state="available",vehicle_type_id="bike"} 1
 `
 		if err := testutil.CollectAndCompare(subject, strings.NewReader(expected), "gbfs_vehicles"); err != nil {
 			t.Error(err)
@@ -486,10 +486,10 @@ func TestCollectSplitsDockedVehicles(t *testing.T) {
 	expected := `
 # HELP gbfs_vehicles Number of vehicles in the vehicle feed, docked or not. docked is true when the feed gave the vehicle a station_id.
 # TYPE gbfs_vehicles gauge
-gbfs_vehicles{docked="false",form_factor="bicycle",propulsion_type="electric_assist",state="available",system="demo",vehicle_type_id="ebike"} 1
-gbfs_vehicles{docked="false",form_factor="bicycle",propulsion_type="electric_assist",state="reserved",system="demo",vehicle_type_id="ebike"} 1
-gbfs_vehicles{docked="false",form_factor="bicycle",propulsion_type="human",state="disabled",system="demo",vehicle_type_id="bike"} 1
-gbfs_vehicles{docked="true",form_factor="bicycle",propulsion_type="human",state="available",system="demo",vehicle_type_id="bike"} 1
+gbfs_vehicles{docked="false",form_factor="bicycle",propulsion_type="electric_assist",state="available",vehicle_type_id="ebike"} 1
+gbfs_vehicles{docked="false",form_factor="bicycle",propulsion_type="electric_assist",state="reserved",vehicle_type_id="ebike"} 1
+gbfs_vehicles{docked="false",form_factor="bicycle",propulsion_type="human",state="disabled",vehicle_type_id="bike"} 1
+gbfs_vehicles{docked="true",form_factor="bicycle",propulsion_type="human",state="available",vehicle_type_id="bike"} 1
 `
 	if err := testutil.CollectAndCompare(subject, strings.NewReader(expected), "gbfs_vehicles"); err != nil {
 		t.Error(err)
@@ -517,7 +517,7 @@ func TestSystemTotalsAbsentForAnUnreportedField(t *testing.T) {
 	expected := `
 # HELP gbfs_system_vehicles_available Sum of gbfs_station_vehicles_available over every station. Never add it to that metric.
 # TYPE gbfs_system_vehicles_available gauge
-gbfs_system_vehicles_available{system="demo"} 8
+gbfs_system_vehicles_available 8
 `
 	names := []string{
 		"gbfs_system_vehicles_available", "gbfs_system_vehicles_disabled",
