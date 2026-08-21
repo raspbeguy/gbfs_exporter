@@ -985,7 +985,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "gbfs_station_vehicles_available{system=~\"$system\"}\n  * on (system, station_id) group_left (name, lat, lon) gbfs_station_info{system=~\"$system\"}",
+          "expr": "gbfs_station_vehicles_available{system=~\"$system\"}\n  * on (system, station_id) group_left (station_name, lat, lon) gbfs_station_info{system=~\"$system\"}",
           "instant": true,
           "range": false,
           "refId": "A",
@@ -1127,7 +1127,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "bottomk(20, gbfs_station_vehicles_available{system=~\"$system\"}\n  * on (system, station_id) group_left (name, lat, lon) gbfs_station_info{system=~\"$system\"})",
+          "expr": "bottomk(20, gbfs_station_vehicles_available{system=~\"$system\"}\n  * on (system, station_id) group_left (station_name, lat, lon) gbfs_station_info{system=~\"$system\"})",
           "instant": true,
           "range": false,
           "refId": "A",

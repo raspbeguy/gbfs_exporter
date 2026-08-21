@@ -114,14 +114,14 @@ gbfs_station_renting{station_id="2",system="demo"} 0
 # TYPE gbfs_station_vehicles_available gauge
 gbfs_station_vehicles_available{station_id="1",system="demo"} 3
 gbfs_station_vehicles_available{station_id="2",system="demo"} 5
-# HELP gbfs_station_vehicles_available_by_type Number of vehicles of one type at the station that a rider can take.
-# TYPE gbfs_station_vehicles_available_by_type gauge
-gbfs_station_vehicles_available_by_type{form_factor="bicycle",propulsion_type="human",station_id="1",system="demo",vehicle_type_id="bike"} 2
-gbfs_station_vehicles_available_by_type{form_factor="bicycle",propulsion_type="electric_assist",station_id="1",system="demo",vehicle_type_id="ebike"} 1
+# HELP gbfs_station_type_vehicles_available Number of vehicles of one type at the station. A breakdown of gbfs_station_vehicles_available; never add the two.
+# TYPE gbfs_station_type_vehicles_available gauge
+gbfs_station_type_vehicles_available{form_factor="bicycle",propulsion_type="human",station_id="1",system="demo",vehicle_type_id="bike"} 2
+gbfs_station_type_vehicles_available{form_factor="bicycle",propulsion_type="electric_assist",station_id="1",system="demo",vehicle_type_id="ebike"} 1
 # HELP gbfs_station_info Station metadata. The value is always 1.
 # TYPE gbfs_station_info gauge
-gbfs_station_info{lat="48.8",lon="2.3",name="Gare",station_id="1",system="demo"} 1
-gbfs_station_info{lat="48.9",lon="2.4",name="Place",station_id="2",system="demo"} 1
+gbfs_station_info{lat="48.8",lon="2.3",station_id="1",station_name="Gare",system="demo"} 1
+gbfs_station_info{lat="48.9",lon="2.4",station_id="2",station_name="Place",system="demo"} 1
 # HELP gbfs_station_capacity Total parking positions of the station: docking points for a physical station, parkable vehicles for a virtual one.
 # TYPE gbfs_station_capacity gauge
 gbfs_station_capacity{station_id="1",system="demo"} 20
@@ -139,7 +139,7 @@ gbfs_system_vehicles_disabled{system="demo"} 1
 gbfs_system_docks_available{system="demo"} 16
 # HELP gbfs_system_info System metadata. The value is always 1.
 # TYPE gbfs_system_info gauge
-gbfs_system_info{name="Demo Bikes",system="demo",system_id="demo",timezone="Europe/Paris",version="2.3"} 1
+gbfs_system_info{gbfs_version="2.3",system="demo",system_id="demo",system_name="Demo Bikes",timezone="Europe/Paris"} 1
 # HELP gbfs_up 1 if the exporter read every feed that the system publishes, 0 if any feed or the discovery document failed.
 # TYPE gbfs_up gauge
 # HELP gbfs_station_docks_available Number of docks at the station that accept a vehicle.
@@ -160,7 +160,7 @@ gbfs_up{system="demo"} 1
 		"gbfs_station_docks_available", "gbfs_station_info",
 		"gbfs_station_installed", "gbfs_station_renting",
 		"gbfs_station_returning", "gbfs_station_vehicles_available",
-		"gbfs_station_vehicles_available_by_type", "gbfs_station_vehicles_disabled",
+		"gbfs_station_type_vehicles_available", "gbfs_station_vehicles_disabled",
 		"gbfs_system_docks_available",
 		"gbfs_system_info", "gbfs_system_stations",
 		"gbfs_system_vehicles_available", "gbfs_system_vehicles_disabled",
@@ -181,10 +181,10 @@ func TestCollectVersion3(t *testing.T) {
 gbfs_station_vehicles_available{station_id="1",system="demo"} 3
 # HELP gbfs_station_info Station metadata. The value is always 1.
 # TYPE gbfs_station_info gauge
-gbfs_station_info{lat="48.8",lon="2.3",name="Gare",station_id="1",system="demo"} 1
+gbfs_station_info{lat="48.8",lon="2.3",station_id="1",station_name="Gare",system="demo"} 1
 # HELP gbfs_system_info System metadata. The value is always 1.
 # TYPE gbfs_system_info gauge
-gbfs_system_info{name="Demo Bikes",system="demo",system_id="demo",timezone="Europe/Paris",version="3.0"} 1
+gbfs_system_info{gbfs_version="3.0",system="demo",system_id="demo",system_name="Demo Bikes",timezone="Europe/Paris"} 1
 # HELP gbfs_vehicles Number of vehicles in the vehicle feed, docked or not. docked is true when the feed gave the vehicle a station_id.
 # TYPE gbfs_vehicles gauge
 gbfs_vehicles{docked="false",form_factor="bicycle",propulsion_type="electric_assist",state="available",system="demo",vehicle_type_id="ebike"} 1
@@ -408,8 +408,8 @@ func TestCollectVehicleTypeInfo(t *testing.T) {
 	expected := `
 # HELP gbfs_vehicle_type_info Vehicle type metadata. The value is always 1.
 # TYPE gbfs_vehicle_type_info gauge
-gbfs_vehicle_type_info{form_factor="bicycle",name="",propulsion_type="human",system="demo",vehicle_type_id="bike"} 1
-gbfs_vehicle_type_info{form_factor="bicycle",name="",propulsion_type="electric_assist",system="demo",vehicle_type_id="ebike"} 1
+gbfs_vehicle_type_info{form_factor="bicycle",propulsion_type="human",system="demo",vehicle_type_id="bike",vehicle_type_name=""} 1
+gbfs_vehicle_type_info{form_factor="bicycle",propulsion_type="electric_assist",system="demo",vehicle_type_id="ebike",vehicle_type_name=""} 1
 `
 	if err := testutil.CollectAndCompare(subject, strings.NewReader(expected), "gbfs_vehicle_type_info"); err != nil {
 		t.Error(err)

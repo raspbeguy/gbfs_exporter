@@ -185,11 +185,11 @@ func TestModuleControlsPerVehicleType(t *testing.T) {
 	}})
 
 	withType := get(t, handler, "/metrics?target="+server.URL+"/gbfs.json&module=pertype").Body.String()
-	if !strings.Contains(withType, "gbfs_station_vehicles_available_by_type") {
+	if !strings.Contains(withType, "gbfs_station_type_vehicles_available") {
 		t.Error("the pertype module gives no per-type metric")
 	}
 	plain := get(t, handler, "/metrics?target="+server.URL+"/gbfs.json").Body.String()
-	if strings.Contains(plain, "gbfs_station_vehicles_available_by_type") {
+	if strings.Contains(plain, "gbfs_station_type_vehicles_available") {
 		t.Error("the default module gives a per-type metric")
 	}
 }

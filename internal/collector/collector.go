@@ -60,17 +60,17 @@ var (
 	systemInfoDesc = prometheus.NewDesc(
 		namespace+"_system_info",
 		"System metadata. The value is always 1.",
-		[]string{"system", "system_id", "name", "version", "timezone"}, nil)
+		[]string{"system", "system_id", "system_name", "gbfs_version", "timezone"}, nil)
 
 	vehicleTypeInfoDesc = prometheus.NewDesc(
 		namespace+"_vehicle_type_info",
 		"Vehicle type metadata. The value is always 1.",
-		[]string{"system", "vehicle_type_id", "name", "form_factor", "propulsion_type"}, nil)
+		[]string{"system", "vehicle_type_id", "vehicle_type_name", "form_factor", "propulsion_type"}, nil)
 
 	stationInfoDesc = prometheus.NewDesc(
 		namespace+"_station_info",
 		"Station metadata. The value is always 1.",
-		[]string{"system", "station_id", "name", "lat", "lon"}, nil)
+		[]string{"system", "station_id", "station_name", "lat", "lon"}, nil)
 
 	stationCapacityDesc = prometheus.NewDesc(
 		namespace+"_station_capacity",
@@ -113,8 +113,8 @@ var (
 		[]string{"system", "station_id"}, nil)
 
 	stationTypeDesc = prometheus.NewDesc(
-		namespace+"_station_vehicles_available_by_type",
-		"Number of vehicles of one type at the station that a rider can take.",
+		namespace+"_station_type_vehicles_available",
+		"Number of vehicles of one type at the station. A breakdown of gbfs_station_vehicles_available; never add the two.",
 		[]string{"system", "station_id", "vehicle_type_id", "form_factor", "propulsion_type"}, nil)
 
 	vehiclesDesc = prometheus.NewDesc(
