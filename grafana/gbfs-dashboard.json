@@ -1104,6 +1104,45 @@
                 }
               }
             ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Free docks"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "mode": "gradient",
+                  "type": "gauge"
+                }
+              },
+              {
+                "id": "min",
+                "value": 0
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "red",
+                      "value": null
+                    },
+                    {
+                      "color": "orange",
+                      "value": 1
+                    },
+                    {
+                      "color": "green",
+                      "value": 3
+                    }
+                  ]
+                }
+              }
+            ]
           }
         ]
       },
@@ -1172,7 +1211,7 @@
           "id": "filterFieldsByName",
           "options": {
             "include": {
-              "pattern": "^(station_name|station_id|Value #A|Value #B)$"
+              "pattern": "^(station_name|Value #A|Value #B)$"
             }
           }
         },
@@ -1182,13 +1221,11 @@
             "excludeByName": {},
             "indexByName": {
               "station_name": 0,
-              "station_id": 1,
-              "Value #A": 2,
-              "Value #B": 3
+              "Value #A": 1,
+              "Value #B": 2
             },
             "renameByName": {
               "station_name": "Station",
-              "station_id": "Station ID",
               "Value #A": "Vehicles",
               "Value #B": "Free docks"
             }
