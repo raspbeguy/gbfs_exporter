@@ -26,6 +26,9 @@ type System struct {
 	// at the same time. Set it to 1 for an operator that answers HTTP 429 to
 	// parallel requests. A value of 0 means no limit.
 	MaxConcurrency int
+	// RequestTimeout is the budget for one feed of this system. A value of 0
+	// uses the budget of the configuration file.
+	RequestTimeout time.Duration
 }
 
 const namespace = "gbfs"
@@ -201,6 +204,7 @@ func (c *Collector) collectSystem(ctx context.Context, ch chan<- prometheus.Metr
 	snapshot, err := c.client.Fetch(ctx, system.URL, gbfs.FetchOptions{
 		Headers:        system.Headers,
 		MaxConcurrency: system.MaxConcurrency,
+		RequestTimeout: system.RequestTimeout,
 	})
 	if err != nil {
 		c.log.Warn("cannot read the system", "system", system.Name, "url", system.URL, "error", err)

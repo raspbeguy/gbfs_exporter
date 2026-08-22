@@ -17,18 +17,25 @@ const maxBodyBytes = 64 << 20
 
 // Client reads GBFS feeds over HTTP.
 type Client struct {
-	http      *http.Client
-	userAgent string
+	http *http.Client
+	// requestTimeout is the budget for one feed when the caller names none.
+	requestTimeout time.Duration
+	userAgent      string
 }
 
 // NewClient returns a client that gives up on one feed after the timeout.
+//
+// The timeout is the default. A caller can raise it for one system through
+// FetchOptions, because a slow operator is a property of that operator and not
+// of the exporter. The budget rides on the request context rather than on the
+// http.Client, so one client can serve several budgets.
 //
 // The transport reads the proxy settings from the environment, so the
 // variables HTTP_PROXY, HTTPS_PROXY, and NO_PROXY work.
 func NewClient(timeout time.Duration, userAgent string) *Client {
 	return &Client{
+		requestTimeout: timeout,
 		http: &http.Client{
-			Timeout: timeout,
 			Transport: &http.Transport{
 				Proxy:                 http.ProxyFromEnvironment,
 				ForceAttemptHTTP2:     true,
@@ -51,16 +58,30 @@ type FetchOptions struct {
 	// same time. A value of 0 or less means no limit. Set it to 1 for an
 	// operator that answers HTTP 429 to parallel requests.
 	MaxConcurrency int
+	// RequestTimeout is the budget for one feed of this system. A value of 0
+	// or less uses the default of the client. Raise it for an operator that
+	// stalls, so that a slow feed does not need a longer budget everywhere.
+	RequestTimeout time.Duration
 }
 
-func (c *Client) get(ctx context.Context, feedURL string, headers map[string]string, out any) error {
+func (c *Client) get(ctx context.Context, feedURL string, options FetchOptions, out any) error {
+	budget := options.RequestTimeout
+	if budget <= 0 {
+		budget = c.requestTimeout
+	}
+	if budget > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, budget)
+		defer cancel()
+	}
+
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, feedURL, nil)
 	if err != nil {
 		return fmt.Errorf("gbfs: bad URL %q: %w", feedURL, err)
 	}
 	request.Header.Set("User-Agent", c.userAgent)
 	request.Header.Set("Accept", "application/json")
-	for name, value := range headers {
+	for name, value := range options.Headers {
 		request.Header.Set(name, value)
 	}
 
@@ -141,7 +162,7 @@ func (c *Client) Fetch(ctx context.Context, discoveryURL string, options FetchOp
 	// caller still needs to report that the discovery feed is down.
 	var discovery Discovery
 	start := time.Now()
-	err := c.get(ctx, discoveryURL, options.Headers, &discovery)
+	err := c.get(ctx, discoveryURL, options, &discovery)
 	snapshot.Feeds[FeedDiscovery] = result(discovery.FeedHeader, time.Since(start), err)
 	if err != nil {
 		return snapshot, err
@@ -201,7 +222,7 @@ func (c *Client) Fetch(ctx context.Context, discoveryURL string, options FetchOp
 
 	fetch(FeedSystemInformation, FeedSystemInformation, func(ctx context.Context, u string) (FeedHeader, error) {
 		var feed SystemInformation
-		if err := c.get(ctx, u, options.Headers, &feed); err != nil {
+		if err := c.get(ctx, u, options, &feed); err != nil {
 			return feed.FeedHeader, err
 		}
 		mutex.Lock()
@@ -214,7 +235,7 @@ func (c *Client) Fetch(ctx context.Context, discoveryURL string, options FetchOp
 
 	fetch(FeedStationInformation, FeedStationInformation, func(ctx context.Context, u string) (FeedHeader, error) {
 		var feed StationInformation
-		if err := c.get(ctx, u, options.Headers, &feed); err != nil {
+		if err := c.get(ctx, u, options, &feed); err != nil {
 			return feed.FeedHeader, err
 		}
 		mutex.Lock()
@@ -225,7 +246,7 @@ func (c *Client) Fetch(ctx context.Context, discoveryURL string, options FetchOp
 
 	fetch(FeedStationStatus, FeedStationStatus, func(ctx context.Context, u string) (FeedHeader, error) {
 		var feed StationStatusFeed
-		if err := c.get(ctx, u, options.Headers, &feed); err != nil {
+		if err := c.get(ctx, u, options, &feed); err != nil {
 			return feed.FeedHeader, err
 		}
 		mutex.Lock()
@@ -236,7 +257,7 @@ func (c *Client) Fetch(ctx context.Context, discoveryURL string, options FetchOp
 
 	fetch(FeedVehicleTypes, FeedVehicleTypes, func(ctx context.Context, u string) (FeedHeader, error) {
 		var feed VehicleTypesFeed
-		if err := c.get(ctx, u, options.Headers, &feed); err != nil {
+		if err := c.get(ctx, u, options, &feed); err != nil {
 			return feed.FeedHeader, err
 		}
 		mutex.Lock()
@@ -255,7 +276,7 @@ func (c *Client) Fetch(ctx context.Context, discoveryURL string, options FetchOp
 	}
 	fetch(vehicleFeed, FeedVehicleStatus, func(ctx context.Context, u string) (FeedHeader, error) {
 		var feed VehicleStatusFeed
-		if err := c.get(ctx, u, options.Headers, &feed); err != nil {
+		if err := c.get(ctx, u, options, &feed); err != nil {
 			return feed.FeedHeader, err
 		}
 		mutex.Lock()

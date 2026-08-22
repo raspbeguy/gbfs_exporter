@@ -137,7 +137,13 @@ holds no such module.
 | --- | --- | --- |
 | `per_vehicle_type` | `false` | Add one series per station and per vehicle type. |
 | `max_concurrency` | `0` | Feeds to read at the same time. 0 means no limit. |
+| `request_timeout` | the file value | Budget for one feed of this operator. It must not exceed `timeout`. |
 | `headers` | empty | Headers to add to every request. |
+
+Raise `request_timeout` in a module for an operator that stalls. Strasbourg
+Citiz answers most reads in 50 milliseconds and then holds about three reads in
+a hundred open until the budget runs out. A module keeps the longer budget to
+that operator, so a hung feed elsewhere still gives up quickly.
 
 ```yaml
 modules:

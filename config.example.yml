@@ -38,6 +38,13 @@ modules:
   # Settings for an operator that needs nothing special.
   default: {}
 
+  # An operator that stalls. Strasbourg Citiz answers most reads in 50
+  # milliseconds and then holds about three in a hundred open until the budget
+  # runs out. Raise the budget for that operator alone, rather than for every
+  # operator. The value must stay below timeout.
+  slow_operator:
+    request_timeout: 25s
+
   # An operator that limits parallel requests and asks for a client name.
   entur:
     # Set max_concurrency to 1 if the operator answers HTTP 429 to parallel

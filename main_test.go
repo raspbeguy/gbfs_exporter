@@ -398,3 +398,74 @@ func TestRejectedRequestsAreCounted(t *testing.T) {
 		}
 	}
 }
+
+// TestModuleRequestTimeoutOverridesTheFile checks that a module can raise the
+// per-feed budget for one slow operator without touching the others.
+//
+// Strasbourg Citiz stalls on about three reads in a hundred and never sends
+// headers. A global budget would have to grow for every operator to cover it.
+func TestModuleRequestTimeoutOverridesTheFile(t *testing.T) {
+	var mu sync.Mutex
+	stall := true
+	mux := http.NewServeMux()
+	for path, body := range feeds {
+		body := body
+		mux.HandleFunc(path, func(w http.ResponseWriter, r *http.Request) {
+			mu.Lock()
+			slow := stall && r.URL.Path == "/gbfs.json"
+			mu.Unlock()
+			if slow {
+				// Hold the request open past the short budget.
+				time.Sleep(400 * time.Millisecond)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(body))
+		})
+	}
+	server := httptest.NewServer(mux)
+	t.Cleanup(server.Close)
+
+	config := &Config{
+		Timeout:        5 * time.Second,
+		RequestTimeout: 100 * time.Millisecond,
+		MaxInFlight:    4,
+		Modules: map[string]Module{
+			"default": {},
+			"patient": {RequestTimeout: 3 * time.Second},
+		},
+	}
+	client := gbfs.NewClient(config.RequestTimeout, "gbfs_exporter/test")
+	handler := probeHandler(client, config, slog.New(slog.DiscardHandler))
+
+	// The short budget of the file cannot read the stalling discovery file.
+	body := get(t, handler, "/probe?target="+server.URL+"/gbfs.json").Body.String()
+	if !strings.Contains(body, "gbfs_up 0") {
+		t.Errorf("the short budget read the stalling feed:\n%s", body)
+	}
+	// The module raises the budget, so the same feed answers.
+	body = get(t, handler, "/probe?target="+server.URL+"/gbfs.json&module=patient").Body.String()
+	if !strings.Contains(body, "gbfs_up 1") {
+		t.Errorf("the longer budget of the module did not apply:\n%s", body)
+	}
+
+	// With the stall gone, the short budget works again, which proves the
+	// first failure was the budget and not the fixture.
+	mu.Lock()
+	stall = false
+	mu.Unlock()
+	body = get(t, handler, "/probe?target="+server.URL+"/gbfs.json").Body.String()
+	if !strings.Contains(body, "gbfs_up 1") {
+		t.Errorf("the short budget failed on a fast feed:\n%s", body)
+	}
+}
+
+func TestLoadConfigRejectsABadModuleTimeout(t *testing.T) {
+	for _, body := range []string{
+		"timeout: 30s\nmodules:\n  slow:\n    request_timeout: -1s\n",
+		"timeout: 30s\nmodules:\n  slow:\n    request_timeout: 45s\n",
+	} {
+		if _, err := loadConfig(writeConfig(t, body)); err == nil {
+			t.Errorf("the configuration %q loads without an error", body)
+		}
+	}
+}

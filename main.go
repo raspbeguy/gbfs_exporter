@@ -78,6 +78,10 @@ type Module struct {
 	// time. Set it to 1 for an operator that answers HTTP 429 to parallel
 	// requests. A value of 0 means no limit.
 	MaxConcurrency int `yaml:"max_concurrency"`
+	// RequestTimeout is the budget for one feed of this operator. It overrides
+	// the request_timeout of the file. Raise it for an operator that stalls,
+	// rather than raising the budget of every operator.
+	RequestTimeout time.Duration `yaml:"request_timeout"`
 }
 
 func main() {
@@ -227,6 +231,7 @@ func probeHandler(client *gbfs.Client, config *Config, log *slog.Logger) http.Ha
 			PerVehicleType: module.PerVehicleType,
 			Headers:        module.Headers,
 			MaxConcurrency: module.MaxConcurrency,
+			RequestTimeout: module.RequestTimeout,
 		}
 		registry := prometheus.NewRegistry()
 		single := collector.New(client, system, config.Timeout, log)
@@ -306,6 +311,14 @@ func loadConfig(path string) (*Config, error) {
 	for name, module := range config.Modules {
 		if module.MaxConcurrency < 0 {
 			return nil, fmt.Errorf("module %q has a negative max_concurrency", name)
+		}
+		if module.RequestTimeout < 0 {
+			return nil, fmt.Errorf("module %q has a negative request_timeout", name)
+		}
+		// The scrape budget caps every feed of the system, so a longer feed
+		// budget than the scrape budget can never be reached.
+		if module.RequestTimeout > config.Timeout {
+			return nil, fmt.Errorf("module %q has a request_timeout above timeout", name)
 		}
 	}
 	return config, nil
