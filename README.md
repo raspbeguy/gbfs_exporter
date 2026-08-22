@@ -504,12 +504,27 @@ Vehicles in the vehicle feed:
 sum by (system) (gbfs_vehicles)
 ```
 
-Fill rate of each system:
+Occupancy of each system:
 
 ```promql
-gbfs_system_vehicles_available
-  / (gbfs_system_vehicles_available + gbfs_system_docks_available)
+sum by (system) (
+  gbfs_station_vehicles_available
+    and on (system, station_id) gbfs_station_capacity
+)
+/
+sum by (system) (
+  gbfs_station_capacity
+    and on (system, station_id) gbfs_station_vehicles_available
+)
 ```
+
+Divide by the capacity, and not by the free docks. An operator that reports no
+free docks would otherwise read as permanently full. Citiz Grand Est is one: it
+reports zero free docks at all 293 of its stations, so the ratio against free
+docks answers 1.0 while the true occupancy is 0.60.
+
+The `and on` keeps the two sums over the same stations. A station that the
+status feed never described is left out, rather than counted as empty.
 
 The ten emptiest stations, with their names:
 
