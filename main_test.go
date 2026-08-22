@@ -526,3 +526,47 @@ func TestReuseConnectionsFalseOpensANewConnectionPerFeed(t *testing.T) {
 	}
 	t.Logf("connections used: reuse=%d, reuse_connections false=%d", shared, perFeed)
 }
+
+// TestAHungFeedIsAlwaysBounded checks the safety net that replaced
+// http.Client.Timeout.
+//
+// The per-feed budget now rides on the request context so that a module can
+// raise it. If that budget were ever zero, the only thing left bounding a
+// request is the scrape budget. This test removes the per-feed budget and
+// proves the scrape still ends.
+func TestAHungFeedIsAlwaysBounded(t *testing.T) {
+	hang := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-hang // never answer
+	}))
+	// Cleanups run last first, so the unblock must be registered after
+	// server.Close. Otherwise Close waits on its own hung handler for ever.
+	t.Cleanup(server.Close)
+	t.Cleanup(func() { close(hang) })
+
+	config := &Config{
+		Timeout:        700 * time.Millisecond, // the scrape budget
+		RequestTimeout: 0,                      // no per-feed budget at all
+		MaxInFlight:    4,
+		Modules:        map[string]Module{"default": {}},
+	}
+	client := gbfs.NewClient(config.RequestTimeout, "gbfs_exporter/test")
+	handler := probeHandler(client, config, slog.New(slog.DiscardHandler))
+
+	start := time.Now()
+	recorder := get(t, handler, "/probe?target="+server.URL+"/gbfs.json")
+	took := time.Since(start)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("got status %d, want 200", recorder.Code)
+	}
+	if !strings.Contains(recorder.Body.String(), "gbfs_up 0") {
+		t.Errorf("a hung feed did not report the system as down:\n%s", recorder.Body.String())
+	}
+	// The scrape budget must cut it. Allow room for the handler around it.
+	if took > 3*time.Second {
+		t.Fatalf("the scrape took %v, so nothing bounded the hung request", took.Round(time.Millisecond))
+	}
+	t.Logf("a hung feed with no per-feed budget ended after %v, cut by the scrape budget of %v",
+		took.Round(time.Millisecond), config.Timeout)
+}
