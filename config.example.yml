@@ -28,8 +28,10 @@ allowed_hosts:
   - gbfs.nextbike.net
 
 # Number of scrapes that run at the same time. A scrape above the limit gets
-# HTTP 503.
-max_in_flight: 4
+# HTTP 503, and Prometheus reads that as a target that is down. Keep the value
+# above the number of targets that you scrape, so that a run of targets landing
+# together cannot refuse one of them.
+max_in_flight: 8
 
 # Modules hold the settings that a query string must not carry, such as an API
 # key. A scrape names one with the module parameter. A scrape without the
@@ -51,11 +53,9 @@ modules:
   slow_operator:
     request_timeout: 25s
 
-  # An operator that limits parallel requests and asks for a client name.
+  # An operator that asks for a client name. Entur reads all of its feeds at
+  # once without complaint, so it needs no concurrency limit.
   entur:
-    # Set max_concurrency to 1 if the operator answers HTTP 429 to parallel
-    # requests. A value of 0 means no limit.
-    max_concurrency: 1
     # Set per_vehicle_type to true to get one series per station and per
     # vehicle type. This multiplies the number of series. Leave it off for a
     # large system.
@@ -64,6 +64,12 @@ modules:
     # name that the operator asks for.
     headers:
       ET-Client-Name: my-company-gbfs-exporter
+
+  # An operator that answers HTTP 429 to parallel requests. Measure before you
+  # set this: it makes the exporter read the feeds one after another, so the
+  # scrape takes as long as their total rather than their slowest.
+  rate_limited_operator:
+    max_concurrency: 1
 
   # A large system. Keep per_vehicle_type off to hold the series count down.
   large:

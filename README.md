@@ -123,7 +123,7 @@ every host. Set the list, or keep the port closed to untrusted callers.
 | `request_timeout` | `10s` | Budget for one feed. It must not exceed `timeout`. |
 | `user_agent` | the version | User agent that the exporter sends. |
 | `allowed_hosts` | empty | Hosts that the exporter accepts as a target. Empty accepts every host. |
-| `max_in_flight` | `4` | Scrapes that run at the same time. A scrape above the limit gets HTTP 503. |
+| `max_in_flight` | `4` | Scrapes that run at the same time. A scrape above the limit gets HTTP 503. Keep it above the number of targets. |
 | `modules` | empty | Named settings for an operator. |
 
 ### Modules
@@ -144,6 +144,18 @@ holds no such module.
 Raise `request_timeout` in a module for an operator that is slow. A module keeps
 the longer budget to that operator, so a hung feed elsewhere still gives up
 quickly.
+
+### Do not limit concurrency without measuring
+
+`max_concurrency` makes the exporter read the feeds of a system one after
+another, so the scrape takes as long as their total rather than as long as their
+slowest. Set it only for an operator that answers HTTP 429 to parallel
+requests, and measure first. Entur serves all four Trondheim feeds together in
+0.28 seconds and one after another in 0.80 seconds.
+
+Keep `max_in_flight` above the number of targets you scrape. A scrape above the
+limit gets HTTP 503, and Prometheus reads that as a target that is down, so a
+run of targets landing together would report a healthy system as broken.
 
 ### An operator that holds a reused connection
 
