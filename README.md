@@ -484,10 +484,12 @@ the space that does neither. That third band is derived by subtraction, because
 no GBFS field states it. At a car sharing bay it is mostly cars out on rental,
 and at a docked bike station it is broken docks or bikes.
 
-The station list offers no **All** entry. One row per station is unreadable for
-a system with hundreds of them.
+The station list offers **All**. It draws a row for every station of the
+system, so read it as a bulk view rather than a comparison: Oslo makes 268 rows
+and Citiz 293.
 
-Pick the stations you want. The dashboard draws one row for each.
+Pick the stations you want. The dashboard draws one row for each, and **All**
+draws a row for every station of the system.
 
 The system dashboard holds six rows, ordered from the whole network down to
 reference data:

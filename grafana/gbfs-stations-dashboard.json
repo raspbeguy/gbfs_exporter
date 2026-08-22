@@ -15,7 +15,7 @@
       }
     ]
   },
-  "description": "One row per station: occupancy against capacity, the service flags, and the vehicle mix. Pick the stations you care about; the list is deliberately not an All, because a row for each of 293 stations is unreadable.",
+  "description": "One row per station: occupancy against capacity, the service flags, and the vehicle mix. All draws a row for every station of the system, so a system with hundreds of them makes a very long page.",
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 1,
@@ -91,7 +91,7 @@
         },
         "definition": "query_result(last_over_time(gbfs_station_info{system=\"$system\"}[24h]))",
         "hide": 0,
-        "includeAll": false,
+        "includeAll": true,
         "label": "Station",
         "multi": true,
         "name": "station",
