@@ -138,12 +138,28 @@ holds no such module.
 | `per_vehicle_type` | `false` | Add one series per station and per vehicle type. |
 | `max_concurrency` | `0` | Feeds to read at the same time. 0 means no limit. |
 | `request_timeout` | the file value | Budget for one feed of this operator. It must not exceed `timeout`. |
+| `reuse_connections` | `true` | Keep one connection alive across the feeds of this operator. |
 | `headers` | empty | Headers to add to every request. |
 
-Raise `request_timeout` in a module for an operator that stalls. Strasbourg
-Citiz answers most reads in 50 milliseconds and then holds about three reads in
-a hundred open until the budget runs out. A module keeps the longer budget to
-that operator, so a hung feed elsewhere still gives up quickly.
+Raise `request_timeout` in a module for an operator that is slow. A module keeps
+the longer budget to that operator, so a hung feed elsewhere still gives up
+quickly.
+
+### An operator that holds a reused connection
+
+Some operators serve the first request of a connection at once and then hold
+every later one. Strasbourg Citiz answers the first request in 170 milliseconds
+and each reuse in 5 seconds, whichever HTTP version is in use. The exporter
+reads the feeds of one system together, so all but the first would wait, and a
+scrape that should take half a second takes five.
+
+Set `reuse_connections: false` for such an operator. Each feed then opens its
+own connection, which costs one handshake and removes the wait. Citiz drops from
+about five seconds a scrape to under one.
+
+The exporter also drops an idle connection after 30 seconds, which is below any
+reasonable scrape interval. A connection therefore never carries the penalty
+from one scrape into the next.
 
 ```yaml
 modules:

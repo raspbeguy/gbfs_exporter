@@ -469,3 +469,60 @@ func TestLoadConfigRejectsABadModuleTimeout(t *testing.T) {
 		}
 	}
 }
+
+// TestReuseConnectionsFalseOpensANewConnectionPerFeed checks the module switch
+// for an operator that penalises a reused connection.
+//
+// Strasbourg Citiz serves the first request of a connection in 170
+// milliseconds and every later one in 5 seconds, whichever HTTP version is in
+// use. The exporter reads the feeds of one system together, so all but the
+// first would pay that penalty.
+func TestReuseConnectionsFalseOpensANewConnectionPerFeed(t *testing.T) {
+	var mu sync.Mutex
+	conns := map[string]int{}
+	mux := http.NewServeMux()
+	for path, body := range feeds {
+		body := body
+		mux.HandleFunc(path, func(w http.ResponseWriter, r *http.Request) {
+			mu.Lock()
+			conns[r.RemoteAddr]++
+			mu.Unlock()
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(body))
+		})
+	}
+	server := httptest.NewServer(mux)
+	t.Cleanup(server.Close)
+
+	count := func(reuse *bool) int {
+		mu.Lock()
+		conns = map[string]int{}
+		mu.Unlock()
+		config := &Config{
+			Timeout: 5 * time.Second, RequestTimeout: 3 * time.Second, MaxInFlight: 4,
+			// One feed at a time, so a reused connection is the only way to
+			// serve them all from one address.
+			Modules: map[string]Module{"m": {MaxConcurrency: 1, ReuseConnections: reuse}},
+		}
+		client := gbfs.NewClient(config.RequestTimeout, "gbfs_exporter/test")
+		handler := probeHandler(client, config, slog.New(slog.DiscardHandler))
+		if got := get(t, handler, "/probe?target="+server.URL+"/gbfs.json&module=m"); got.Code != 200 {
+			t.Fatalf("got status %d, want 200", got.Code)
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		return len(conns)
+	}
+
+	no := false
+	shared := count(nil)
+	perFeed := count(&no)
+	// The fixture lists five feeds plus the discovery file.
+	if shared != 1 {
+		t.Errorf("with reuse the exporter used %d connections, want 1", shared)
+	}
+	if perFeed < 2 {
+		t.Errorf("without reuse the exporter used %d connections, want one per feed", perFeed)
+	}
+	t.Logf("connections used: reuse=%d, reuse_connections false=%d", shared, perFeed)
+}

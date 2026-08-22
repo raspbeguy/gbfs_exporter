@@ -38,10 +38,16 @@ modules:
   # Settings for an operator that needs nothing special.
   default: {}
 
-  # An operator that stalls. Strasbourg Citiz answers most reads in 50
-  # milliseconds and then holds about three in a hundred open until the budget
-  # runs out. Raise the budget for that operator alone, rather than for every
-  # operator. The value must stay below timeout.
+  # An operator that holds a reused connection. Strasbourg Citiz serves the
+  # first request of a connection in 170 milliseconds and every later one in 5
+  # seconds, whichever HTTP version is in use. The exporter reads the feeds of
+  # one system together, so all but the first would wait. A new connection per
+  # feed avoids the wait, at the cost of one handshake per feed.
+  connection_hostile_operator:
+    reuse_connections: false
+
+  # An operator that is simply slow. Raise the budget for that operator alone,
+  # rather than for every operator. The value must stay below timeout.
   slow_operator:
     request_timeout: 25s
 

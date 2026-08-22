@@ -29,6 +29,8 @@ type System struct {
 	// RequestTimeout is the budget for one feed of this system. A value of 0
 	// uses the budget of the configuration file.
 	RequestTimeout time.Duration
+	// NoKeepAlive opens a new connection for every feed of this system.
+	NoKeepAlive bool
 }
 
 const namespace = "gbfs"
@@ -205,6 +207,7 @@ func (c *Collector) collectSystem(ctx context.Context, ch chan<- prometheus.Metr
 		Headers:        system.Headers,
 		MaxConcurrency: system.MaxConcurrency,
 		RequestTimeout: system.RequestTimeout,
+		NoKeepAlive:    system.NoKeepAlive,
 	})
 	if err != nil {
 		c.log.Warn("cannot read the system", "system", system.Name, "url", system.URL, "error", err)

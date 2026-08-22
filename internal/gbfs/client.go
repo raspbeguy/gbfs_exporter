@@ -17,7 +17,9 @@ const maxBodyBytes = 64 << 20
 
 // Client reads GBFS feeds over HTTP.
 type Client struct {
-	http *http.Client
+	// reuse keeps connections alive between feeds. fresh closes each one.
+	reuse *http.Client
+	fresh *http.Client
 	// requestTimeout is the budget for one feed when the caller names none.
 	requestTimeout time.Duration
 	userAgent      string
@@ -33,19 +35,29 @@ type Client struct {
 // The transport reads the proxy settings from the environment, so the
 // variables HTTP_PROXY, HTTPS_PROXY, and NO_PROXY work.
 func NewClient(timeout time.Duration, userAgent string) *Client {
+	transport := func(keepAlive bool) *http.Transport {
+		return &http.Transport{
+			Proxy:             http.ProxyFromEnvironment,
+			ForceAttemptHTTP2: true,
+			DisableKeepAlives: !keepAlive,
+			// An idle connection must not outlive the gap between scrapes.
+			// Some operators serve the first request of a connection at once
+			// and then hold every later one for seconds. Strasbourg Citiz
+			// answers the first in 170 milliseconds and every reuse in 5
+			// seconds, whichever HTTP version is in use. A connection kept
+			// past the scrape interval carries that penalty into the next
+			// scrape for as long as it lives.
+			MaxIdleConnsPerHost:   4,
+			IdleConnTimeout:       30 * time.Second,
+			TLSHandshakeTimeout:   10 * time.Second,
+			ExpectContinueTimeout: 1 * time.Second,
+		}
+	}
 	return &Client{
 		requestTimeout: timeout,
-		http: &http.Client{
-			Transport: &http.Transport{
-				Proxy:                 http.ProxyFromEnvironment,
-				ForceAttemptHTTP2:     true,
-				MaxIdleConnsPerHost:   4,
-				IdleConnTimeout:       90 * time.Second,
-				TLSHandshakeTimeout:   10 * time.Second,
-				ExpectContinueTimeout: 1 * time.Second,
-			},
-		},
-		userAgent: userAgent,
+		reuse:          &http.Client{Transport: transport(true)},
+		fresh:          &http.Client{Transport: transport(false)},
+		userAgent:      userAgent,
 	}
 }
 
@@ -62,6 +74,11 @@ type FetchOptions struct {
 	// or less uses the default of the client. Raise it for an operator that
 	// stalls, so that a slow feed does not need a longer budget everywhere.
 	RequestTimeout time.Duration
+	// NoKeepAlive opens a new connection for every feed of this system. Set it
+	// for an operator that holds a reused connection: the exporter reads the
+	// feeds of one system together, so the penalty would land on all but the
+	// first of them.
+	NoKeepAlive bool
 }
 
 func (c *Client) get(ctx context.Context, feedURL string, options FetchOptions, out any) error {
@@ -75,6 +92,11 @@ func (c *Client) get(ctx context.Context, feedURL string, options FetchOptions, 
 		defer cancel()
 	}
 
+	client := c.reuse
+	if options.NoKeepAlive {
+		client = c.fresh
+	}
+
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, feedURL, nil)
 	if err != nil {
 		return fmt.Errorf("gbfs: bad URL %q: %w", feedURL, err)
@@ -85,7 +107,7 @@ func (c *Client) get(ctx context.Context, feedURL string, options FetchOptions, 
 		request.Header.Set(name, value)
 	}
 
-	response, err := c.http.Do(request)
+	response, err := client.Do(request)
 	if err != nil {
 		return fmt.Errorf("gbfs: cannot fetch %s: %w", feedURL, err)
 	}

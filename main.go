@@ -82,6 +82,11 @@ type Module struct {
 	// the request_timeout of the file. Raise it for an operator that stalls,
 	// rather than raising the budget of every operator.
 	RequestTimeout time.Duration `yaml:"request_timeout"`
+	// ReuseConnections keeps one connection alive across the feeds of this
+	// operator. The default is true. Set it to false for an operator that
+	// serves the first request of a connection at once and then holds every
+	// later one, because the exporter reads the feeds of one system together.
+	ReuseConnections *bool `yaml:"reuse_connections"`
 }
 
 func main() {
@@ -232,6 +237,7 @@ func probeHandler(client *gbfs.Client, config *Config, log *slog.Logger) http.Ha
 			Headers:        module.Headers,
 			MaxConcurrency: module.MaxConcurrency,
 			RequestTimeout: module.RequestTimeout,
+			NoKeepAlive:    module.ReuseConnections != nil && !*module.ReuseConnections,
 		}
 		registry := prometheus.NewRegistry()
 		single := collector.New(client, system, config.Timeout, log)
