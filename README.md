@@ -418,7 +418,7 @@ dropdown in its top bar.
 | --- | --- | --- |
 | `gbfs-health-dashboard.json` | Every system at once | Feed freshness against the published ttl, which feed failed, scrape cost, the plausibility of each system's numbers, and the health of the exporter itself. |
 | `gbfs-dashboard.json` | One system | Totals, occupancy, the fleet by drive, station service, a map, and a table of every station. |
-| `gbfs-stations-dashboard.json` | Chosen stations | One row per station: occupancy against capacity, the service flags, and the vehicle mix. |
+| `gbfs-stations-dashboard.json` | Chosen stations | The selection combined, then one row per station: occupancy against capacity, the service flags, and the vehicle mix. |
 
 To import one by hand, follow these steps:
 
@@ -450,16 +450,23 @@ a system with hundreds of them.
 
 Pick the stations you want. The dashboard draws one row for each.
 
-The system dashboard holds six rows:
+The system dashboard holds six rows, ordered from the whole network down to
+reference data:
 
 | Row | Content |
 | --- | --- |
 | Overview | The state of the system, the station count, the vehicle and dock counts, and the occupancy. |
-| Availability | Vehicles and docks over time, the vehicle feed broken out by state and by `docked`, and the count of empty and full stations. |
-| Vehicle types | The types that the operator publishes, and the fleet split by drive. |
-| Station service | Stations with a service flag off, over time and in a table. |
+| Availability | The network against its capacity, the occupancy over time, and the count of empty and full stations. |
+| Vehicle feed | Vehicles the operator lists outside the station counts, by state, by `docked`, and by drive. A docked system need not publish this feed, and the row says so when it does not. |
 | Stations | A map of every station, and a sortable table of every station with its vehicles and free docks. |
+| Station service | Stations with a service flag off, over time and in a table. |
+| Vehicle types | The types that the operator publishes, and what stands at the stations by drive. |
 | Feed health | The overall state and the state of each feed over time, and the metadata of the system. |
+
+The Availability row measures against capacity rather than against free docks.
+It stacks the vehicles a rider can take, the docks that accept a vehicle, and
+the space that does neither, up to a dashed capacity line. That third band is
+derived by subtraction, because no GBFS field states it.
 
 Occupancy divides the vehicles at stations by the capacity of the stations that
 report both. It does not divide by the free docks. An operator that reports no

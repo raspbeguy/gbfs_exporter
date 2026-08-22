@@ -128,6 +128,353 @@
         "x": 0,
         "y": 0
       },
+      "id": 22,
+      "panels": [],
+      "title": "The selection",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "description": "The stations you picked, added together as one pool. Read this before the rows below: a neighbourhood can be healthy while one station in it is empty. The bands and the capacity line mean the same as in each row.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 45,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "stepAfter",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "normal"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "min": 0,
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Vehicles"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "green",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Free docks"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "blue",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Unavailable (derived)"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#8E8E8E",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Capacity"
+            },
+            "properties": [
+              {
+                "id": "custom.stacking",
+                "value": {
+                  "group": "A",
+                  "mode": "none"
+                }
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 0
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 2
+              },
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "dash": [
+                    8,
+                    6
+                  ],
+                  "fill": "dash"
+                }
+              },
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "text",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 16,
+        "x": 0,
+        "y": 1
+      },
+      "id": 20,
+      "interval": "1m",
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull",
+            "min",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "sum(gbfs_station_vehicles_available{system=~\"$system\", station_id=~\"$station\"})",
+          "instant": false,
+          "legendFormat": "Vehicles",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "sum(gbfs_station_docks_available{system=~\"$system\", station_id=~\"$station\"})",
+          "instant": false,
+          "legendFormat": "Free docks",
+          "range": true,
+          "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "clamp_min(\n  sum(gbfs_station_capacity{system=~\"$system\", station_id=~\"$station\"})\n  - (sum(gbfs_station_vehicles_available{system=~\"$system\", station_id=~\"$station\"}) or vector(0))\n  - (sum(gbfs_station_docks_available{system=~\"$system\", station_id=~\"$station\"}) or vector(0))\n, 0)",
+          "instant": false,
+          "legendFormat": "Unavailable (derived)",
+          "range": true,
+          "refId": "C"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "sum(gbfs_station_capacity{system=~\"$system\", station_id=~\"$station\"})",
+          "instant": false,
+          "legendFormat": "Capacity",
+          "range": true,
+          "refId": "D"
+        }
+      ],
+      "title": "The stations you picked, combined",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "description": "How many of the three service flags are off at each station you picked. A station that publishes no flag at all gets no row here, so do not read a missing row as healthy.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "fillOpacity": 80,
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineWidth": 0,
+            "spanNulls": false
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "color": "green",
+                  "index": 0,
+                  "text": "in service"
+                },
+                "1": {
+                  "color": "yellow",
+                  "index": 1,
+                  "text": "one flag off"
+                },
+                "2": {
+                  "color": "orange",
+                  "index": 2,
+                  "text": "two flags off"
+                },
+                "3": {
+                  "color": "red",
+                  "index": 3,
+                  "text": "out of service"
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              },
+              {
+                "color": "orange",
+                "value": 2
+              },
+              {
+                "color": "red",
+                "value": 3
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 16,
+        "y": 1
+      },
+      "id": 21,
+      "options": {
+        "alignValue": "center",
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": false
+        },
+        "mergeValues": true,
+        "rowHeight": 0.85,
+        "showValue": "never",
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "count by (station_id) (\n  {__name__=~\"gbfs_station_(installed|renting|returning)\", system=~\"$system\", station_id=~\"$station\"} == 0\n)\nor (\n  count by (station_id) (\n    {__name__=~\"gbfs_station_(installed|renting|returning)\", system=~\"$system\", station_id=~\"$station\"}\n  ) * 0\n)",
+          "instant": false,
+          "legendFormat": "{{station_id}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Service, per station",
+      "type": "state-timeline"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 8
+      },
       "id": 10,
       "panels": [],
       "repeat": "station",
@@ -283,7 +630,7 @@
         "h": 8,
         "w": 15,
         "x": 0,
-        "y": 1
+        "y": 9
       },
       "id": 1,
       "interval": "1m",
@@ -415,7 +762,7 @@
         "h": 8,
         "w": 4,
         "x": 15,
-        "y": 1
+        "y": 9
       },
       "id": 2,
       "options": {
@@ -506,7 +853,7 @@
         "h": 8,
         "w": 5,
         "x": 19,
-        "y": 1
+        "y": 9
       },
       "id": 3,
       "options": {

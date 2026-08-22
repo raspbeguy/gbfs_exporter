@@ -934,7 +934,7 @@
         "type": "prometheus",
         "uid": "${datasource}"
       },
-      "description": "The age of the auto-discovery file. This is not a data freshness signal. gbfs.json is an index of feed URLs, so its last_updated says when that list changed. Entur serves a Trondheim index six hours old while every feed it lists is under a minute old, and that is correct. Judge staleness in the ledger instead.",
+      "description": "Not a data freshness signal. gbfs.json is an index of feed URLs, so its last_updated says when that list changed, not when the data did. Entur serves a Trondheim index six hours old while every feed it lists is under a minute old, and that is correct. Judge staleness in the ledger.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -997,7 +997,7 @@
           "legendFormat": "{{system}}"
         }
       ],
-      "title": "Discovery index age, not a freshness signal",
+      "title": "Discovery index age",
       "type": "bargauge"
     },
     {
