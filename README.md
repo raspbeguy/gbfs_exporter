@@ -478,7 +478,9 @@ System dropdown shows the name that the operator publishes, and it takes one
 value.
 
 The station dashboard adds a **Station** variable that takes several values. It
-shows the whole selection as one pool, then one row per station. The graph stacks three bands to the capacity
+shows the whole selection as one pool, then one row per station: the occupancy
+against capacity, the service flags, and a list of the vehicles that stand
+there by name. That list needs a module with `per_vehicle_type` set. The graph stacks three bands to the capacity
 line: the vehicles that a rider can take, the docks that accept a vehicle, and
 the space that does neither. That third band is derived by subtraction, because
 no GBFS field states it. At a car sharing bay it is mostly cars out on rental,

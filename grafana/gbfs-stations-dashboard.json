@@ -516,7 +516,7 @@
       },
       "gridPos": {
         "h": 8,
-        "w": 15,
+        "w": 13,
         "x": 0,
         "y": 9
       },
@@ -649,7 +649,7 @@
       "gridPos": {
         "h": 8,
         "w": 4,
-        "x": 15,
+        "x": 13,
         "y": 9
       },
       "id": 2,
@@ -714,16 +714,17 @@
         "type": "prometheus",
         "uid": "${datasource}"
       },
-      "description": "What stands at this station right now, by form factor and drive. This needs a module with per_vehicle_type set.",
+      "description": "What stands at this station, named. The count is one for most rows, because a station usually holds one of each type, so the names are the information rather than the numbers. This needs a module with per_vehicle_type set.",
       "fieldConfig": {
         "defaults": {
-          "color": {
-            "mode": "palette-classic"
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
           },
           "mappings": [],
-          "min": 0,
-          "unit": "short",
-          "decimals": 0,
           "noValue": "This system reports no per-type breakdown at stations.",
           "thresholds": {
             "mode": "absolute",
@@ -735,32 +736,49 @@
             ]
           }
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Count"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 60
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          }
+        ]
       },
       "gridPos": {
         "h": 8,
-        "w": 5,
-        "x": 19,
+        "w": 7,
+        "x": 17,
         "y": 9
       },
       "id": 3,
       "options": {
-        "displayMode": "basic",
-        "maxVizHeight": 300,
-        "minVizHeight": 16,
-        "minVizWidth": 8,
-        "namePlacement": "auto",
-        "orientation": "horizontal",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
           "fields": "",
-          "values": false
+          "reducer": [
+            "sum"
+          ],
+          "show": false
         },
-        "showUnfilled": true,
-        "sizing": "auto",
-        "valueMode": "color"
+        "showHeader": true,
+        "sortBy": [
+          {
+            "desc": false,
+            "displayName": "Vehicle"
+          }
+        ]
       },
       "targets": [
         {
@@ -769,15 +787,42 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "sum by (form_factor, propulsion_type) (\n  gbfs_station_type_vehicles_available{system=~\"$system\", station_id=\"$station\"}\n)",
+          "expr": "gbfs_station_type_vehicles_available{system=~\"$system\", station_id=\"$station\"}\n  * on (system, vehicle_type_id) group_left (vehicle_type_name)\n    gbfs_vehicle_type_info{system=~\"$system\"}",
+          "format": "table",
           "instant": true,
-          "legendFormat": "{{form_factor}} · {{propulsion_type}}",
           "range": false,
           "refId": "A"
         }
       ],
-      "title": "Vehicle mix now",
-      "type": "bargauge"
+      "title": "Vehicles at this station",
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "__name__": true,
+              "instance": true,
+              "job": true,
+              "system": true,
+              "station_id": true,
+              "vehicle_type_id": true,
+              "form_factor": true
+            },
+            "indexByName": {
+              "vehicle_type_name": 0,
+              "propulsion_type": 1,
+              "Value": 2
+            },
+            "renameByName": {
+              "vehicle_type_name": "Vehicle",
+              "propulsion_type": "Drive",
+              "Value": "Count"
+            }
+          }
+        }
+      ],
+      "type": "table"
     }
   ]
 }
