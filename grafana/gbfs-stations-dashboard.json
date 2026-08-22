@@ -280,7 +280,7 @@
       },
       "gridPos": {
         "h": 7,
-        "w": 16,
+        "w": 24,
         "x": 0,
         "y": 1
       },
@@ -354,118 +354,6 @@
       ],
       "title": "The stations you picked, combined",
       "type": "timeseries"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${datasource}"
-      },
-      "description": "How many of the three service flags are off at each station you picked. A station that publishes no flag at all gets no row here, so do not read a missing row as healthy.",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "custom": {
-            "fillOpacity": 80,
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "insertNulls": false,
-            "lineWidth": 0,
-            "spanNulls": false
-          },
-          "mappings": [
-            {
-              "type": "value",
-              "options": {
-                "0": {
-                  "color": "green",
-                  "index": 0,
-                  "text": "in service"
-                },
-                "1": {
-                  "color": "yellow",
-                  "index": 1,
-                  "text": "one flag off"
-                },
-                "2": {
-                  "color": "orange",
-                  "index": 2,
-                  "text": "two flags off"
-                },
-                "3": {
-                  "color": "red",
-                  "index": 3,
-                  "text": "out of service"
-                }
-              }
-            }
-          ],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 1
-              },
-              {
-                "color": "orange",
-                "value": 2
-              },
-              {
-                "color": "red",
-                "value": 3
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 7,
-        "w": 8,
-        "x": 16,
-        "y": 1
-      },
-      "id": 21,
-      "options": {
-        "alignValue": "center",
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": false
-        },
-        "mergeValues": true,
-        "rowHeight": 0.85,
-        "showValue": "never",
-        "tooltip": {
-          "mode": "single",
-          "sort": "none"
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "editorMode": "code",
-          "expr": "count by (station_id) (\n  {__name__=~\"gbfs_station_(installed|renting|returning)\", system=~\"$system\", station_id=~\"$station\"} == 0\n)\nor (\n  count by (station_id) (\n    {__name__=~\"gbfs_station_(installed|renting|returning)\", system=~\"$system\", station_id=~\"$station\"}\n  ) * 0\n)",
-          "instant": false,
-          "legendFormat": "{{station_id}}",
-          "range": true,
-          "refId": "A"
-        }
-      ],
-      "title": "Service, per station",
-      "type": "state-timeline"
     },
     {
       "collapsed": false,
