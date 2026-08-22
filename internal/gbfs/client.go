@@ -40,13 +40,18 @@ func NewClient(timeout time.Duration, userAgent string) *Client {
 			Proxy:             http.ProxyFromEnvironment,
 			ForceAttemptHTTP2: true,
 			DisableKeepAlives: !keepAlive,
-			// An idle connection must not outlive the gap between scrapes.
 			// Some operators serve the first request of a connection at once
 			// and then hold every later one for seconds. Strasbourg Citiz
 			// answers the first in 170 milliseconds and every reuse in 5
-			// seconds, whichever HTTP version is in use. A connection kept
-			// past the scrape interval carries that penalty into the next
-			// scrape for as long as it lives.
+			// seconds, whichever HTTP version is in use. A connection that
+			// outlives the gap between scrapes carries that penalty into the
+			// next scrape for as long as it lives, so 30 seconds keeps the
+			// pool empty at the usual interval of a minute.
+			//
+			// This is a floor and not a guarantee. A feed with a ttl of 15
+			// seconds invites a shorter interval, and at that interval the
+			// pool still holds a connection. Set reuse_connections to false
+			// in the module of an operator that behaves this way.
 			MaxIdleConnsPerHost:   4,
 			IdleConnTimeout:       30 * time.Second,
 			TLSHandshakeTimeout:   10 * time.Second,

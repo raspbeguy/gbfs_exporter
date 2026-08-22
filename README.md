@@ -169,9 +169,14 @@ Set `reuse_connections: false` for such an operator. Each feed then opens its
 own connection, which costs one handshake and removes the wait. Citiz drops from
 about five seconds a scrape to under one.
 
-The exporter also drops an idle connection after 30 seconds, which is below any
-reasonable scrape interval. A connection therefore never carries the penalty
-from one scrape into the next.
+The exporter also drops an idle connection after 30 seconds, so at the usual
+scrape interval of a minute the pool is empty when the next scrape starts, and
+no connection carries the penalty forward.
+
+That is a floor and not a guarantee. A feed with a `ttl` of 15 seconds invites a
+shorter interval, and at that interval the pool still holds a connection between
+scrapes. `reuse_connections: false` is the reliable answer for an operator that
+behaves this way.
 
 ```yaml
 modules:
