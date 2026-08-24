@@ -1,4 +1,4 @@
-FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS build
+FROM --platform=$BUILDPLATFORM golang:1.27-alpine AS build
 
 # Docker sets TARGETOS and TARGETARCH from the target platform. The build stage
 # runs on the native platform and cross-compiles, so no emulation is necessary.
